@@ -25,6 +25,7 @@ class Ovqat {
   final String? subcategory; // Added subcategory field
   final String? description;
   final String? image;
+  final String? unit;
   final List<Subcategory> subcategories;
 
   Ovqat({
@@ -37,6 +38,7 @@ class Ovqat {
     this.description,
     this.image,
     required this.subcategories,
+    this.unit,
   });
 
   factory Ovqat.fromJson(Map<String, dynamic> json) {
@@ -53,9 +55,9 @@ class Ovqat {
       description: json['description'],
       image: json['image'],
       subcategories: subcategoriesList,
+      unit: json['unit'] ?? '', // <- JSON’dan olamiz
     );
   }
-
   Map<String, dynamic> toJson() {
     return {
       '_id': id,

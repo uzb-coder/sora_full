@@ -9,6 +9,7 @@ import 'dart:async';
 import '../../Admin/Page/Blyuda/Blyuda.dart';
 import '../../Admin/Page/Stollarni_joylashuv.dart';
 import '../../Global/Api_global.dart';
+import '../../Global/Socet.dart';
 import '../Controller/TokenCOntroller.dart';
 import '../Controller/usersCOntroller.dart';
 import '../Model/Ovqat_model.dart';
@@ -35,41 +36,43 @@ class Order {
   final String tableId;
   final String userId;
   final String firstName;
-  final List<OrderItem> items;
-  final double totalPrice;
+  final String formatted_order_number;
   final String status;
   final String createdAt;
+  final int totalPrice;
+  final List<OrderItem> items;
   bool isProcessing;
-  final String formatted_order_number;
 
   Order({
     required this.id,
     required this.tableId,
     required this.userId,
     required this.firstName,
-    required this.items,
-    required this.totalPrice,
+    required this.formatted_order_number,
     required this.status,
     required this.createdAt,
-    required this.formatted_order_number,
+    required this.totalPrice,
+    required this.items,
     this.isProcessing = false,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
     return Order(
-      id: json['_id'] ?? '',
+      id: json['id']?.toString() ?? '',
       tableId: json['table_id']?.toString() ?? '',
+      userId: json['user_id']?.toString() ?? '',
+      firstName: json['first_name']?.toString() ?? '',
       formatted_order_number: json['formatted_order_number']?.toString() ?? '',
-      userId: json['user_id'] ?? '',
-      firstName: json['waiter_name'] ?? json['first_name'] ?? '',
-      items:
-      (json['items'] as List?)
+      status: json['status']?.toString() ?? '',
+      createdAt: json['created_at']?.toString() ?? '',
+      totalPrice: json['total_price'] is int
+          ? json['total_price']
+          : int.tryParse(json['total_price']?.toString() ?? '0') ?? 0,
+      items: (json['items'] as List<dynamic>?)
           ?.map((item) => OrderItem.fromJson(item))
           .toList() ??
           [],
-      totalPrice: (json['total_price'] ?? 0).toDouble(),
-      status: json['status'] ?? '',
-      createdAt: json['createdAt'] ?? '',
+      isProcessing: json['is_processing'] ?? false,
     );
   }
 }
@@ -77,8 +80,8 @@ class Order {
 class OrderItem {
   final String foodId;
   final String? name;
-  final int quantity;
-  final int? price;
+  final num quantity;
+  final num? price; // int emas, double bo‘ldi
   final String? categoryName;
 
   OrderItem({
@@ -94,7 +97,10 @@ class OrderItem {
       foodId: json['food_id'] ?? '',
       quantity: json['quantity'] ?? 0,
       name: json['name'],
-      price: json['price'],
+      price:
+      json['price'] != null
+          ? (json['price'] as num).toDouble()
+          : null, // int/double ikkalasini qamrab oladi
       categoryName: json['category_name'],
     );
   }
@@ -121,7 +127,8 @@ class Category {
       title: json['title'] ?? '',
       printerName: json['printer_id']?['name'] ?? '',
       printerIp: json['printer_id']?['ip'] ?? '',
-      subcategories: json['subcategories'] != null
+      subcategories:
+      json['subcategories'] != null
           ? List<String>.from(json['subcategories'].map((e) => e['title']))
           : [],
     );
@@ -151,7 +158,7 @@ class _PosScreenState extends State<PosScreen> {
   Map<String, List<Order>> _ordersCache = {}; // Zakazlar keshi
   bool _isLoadingTables = false;
 
-// Yangi o'zgaruvchilar qo'shildi
+  // Yangi o'zgaruvchilar qo'shildi
   List<Ovqat> _allProducts = [];
   List<Category> _categories = [];
   bool _isLoadingProducts = false;
@@ -170,13 +177,476 @@ class _PosScreenState extends State<PosScreen> {
     super.dispose();
   }
 
+  // Muammoni hal qilish uchun asosiy o'zgarishlar:
+
+  // 1. _fetchOrdersForTable metodini to'liq qayta yozish
+  Future<void> _fetchOrdersForTable(String tableId) async {
+    if (_token == null) return;
+
+    setState(() => _isLoadingOrders = true);
+
+    try {
+      print("🔄 Stolga zakazlarni olish: $tableId");
+
+      final response = await http
+          .get(
+        Uri.parse("${ApiConfig.baseUrl}/orders/table/$tableId"),
+        headers: {
+          'Authorization': 'Bearer ${widget.token}',
+          'Content-Type': 'application/json',
+        },
+      )
+          .timeout(const Duration(seconds: 10)); // Timeout oshirildi
+
+      print("📡 API javob kodi: ${response.statusCode}");
+      print("📡 API javobi: ${response.body}");
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        print("📦 Olingan ma'lumotlar soni: ${data.length}");
+
+        // Faqat pending holatidagi zakazlarni olish
+        final orders =
+        data
+            .map((json) => Order.fromJson(json))
+            .where((order) => order.status == 'pending')
+            .toList();
+
+        // Zakazlarni id bo'yicha sort qilish (tartibni mustahkamlash uchun)
+        orders.sort((a, b) => a.id.compareTo(b.id));
+
+        print("✅ Pending zakazlar soni: ${orders.length}");
+
+        // Cache'ni yangilash
+        _ordersCache[tableId] = orders;
+
+        if (mounted && _selectedTableId == tableId) {
+          setState(() {
+            _selectedTableOrders = orders;
+            _isLoadingOrders = false;
+          });
+          print("🎯 UI yangilandi: ${orders.length} zakaz ko'rsatilmoqda");
+        }
+      } else {
+        print("❌ Server xatosi: ${response.statusCode}");
+        _ordersCache[tableId] = [];
+        if (mounted && _selectedTableId == tableId) {
+          setState(() {
+            _selectedTableOrders = [];
+            _isLoadingOrders = false;
+          });
+        }
+      }
+    } catch (e) {
+      print("💥 Zakazlarni olishda xatolik: $e");
+      if (mounted && _selectedTableId == tableId) {
+        setState(() {
+          _selectedTableOrders = [];
+          _isLoadingOrders = false;
+        });
+      }
+    }
+  }
+
+  // 2. _handleTableTap metodini soddalashtirilgan
+  void _handleTableTap(String tableName, String tableId) {
+    print("🖱️ Stol tanlandi: $tableName (ID: $tableId)");
+
+    setState(() {
+      _selectedTableName = tableName;
+      _selectedTableId = tableId;
+      _selectedTableOrders = []; // Darhol tozalash
+      _isLoadingOrders = true;
+    });
+
+    // Har doim API dan yangi ma'lumotlarni olish
+    _fetchOrdersForTable(tableId);
+  }
+
+  // 3. _startRealTimeUpdates metodini yaxshilash
+  void _startRealTimeUpdates() {
+    _realTimeTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      _checkTableStatusesRealTime();
+      // Tanlangan stol uchun zakazlarni yangilash
+      if (_selectedTableId != null) {
+        _fetchOrdersForTableSilently(_selectedTableId!);
+      }
+    });
+  }
+
+  // 4. _checkTableStatusesRealTime - optimallashtrilgan real-time yangilanish
+  Future<void> _checkTableStatusesRealTime() async {
+    try {
+      Map<String, bool> newStatus = {};
+      Map<String, String> newOwners = {};
+
+      // Parallel requests bilan barcha stollarni tekshirish (tezroq)
+      final futures = _tables.map((table) async {
+        try {
+          final response = await http
+              .get(
+            Uri.parse('${ApiConfig.baseUrl}/orders/table/${table.id}'),
+            headers: {
+              'Authorization': 'Bearer ${widget.token}',
+              'Content-Type': 'application/json',
+            },
+          )
+              .timeout(const Duration(seconds: 2));
+
+          if (response.statusCode == 200) {
+            final List<dynamic> orders = jsonDecode(response.body);
+            final pendingOrders =
+            orders.where((o) => o['status'] == 'pending').toList();
+
+            newStatus[table.id] = pendingOrders.isNotEmpty;
+            if (pendingOrders.isNotEmpty) {
+              newOwners[table.id] =
+                  pendingOrders.first['user_id']?.toString() ?? '';
+            } else {
+              newOwners.remove(
+                table.id,
+              ); // Bo'sh stollar uchun owner ni olib tashlash
+            }
+
+            // Cache faqat tanlangan stol bo'lmasa yangilanadi
+            if (_selectedTableId != table.id) {
+              final orderObjects =
+              orders
+                  .map((json) => Order.fromJson(json))
+                  .where((order) => order.status == 'pending')
+                  .toList();
+
+              // Zakazlarni sort qilish
+              orderObjects.sort((a, b) => a.id.compareTo(b.id));
+
+              if (orderObjects.isNotEmpty ||
+                  _ordersCache.containsKey(table.id)) {
+                _ordersCache[table.id] = orderObjects;
+              }
+            }
+          } else {
+            newStatus[table.id] = false;
+            newOwners.remove(table.id);
+          }
+        } catch (e) {
+          // Real-time da xatolikni ignore qilamiz, eski holatni saqlaymiz
+          newStatus[table.id] = _tableOccupiedStatus[table.id] ?? false;
+          if (_tableOwners.containsKey(table.id)) {
+            newOwners[table.id] = _tableOwners[table.id]!;
+          }
+        }
+      });
+
+      await Future.wait(futures);
+
+      if (mounted) {
+        // Faqat haqiqatdan ham o'zgarish bo'lsa UI ni yangilash
+        bool statusChanged = !_mapsEqual(newStatus, _tableOccupiedStatus);
+        bool ownerChanged = !_mapsEqualString(newOwners, _tableOwners);
+
+        if (statusChanged || ownerChanged) {
+          setState(() {
+            _tableOccupiedStatus = newStatus;
+            _tableOwners = newOwners;
+
+            // Agar tanlangan stol bo'sh bo'lib qolgan bo'lsa, zakazlar ro'yxatini tozalash
+            if (_selectedTableId != null && !newStatus[_selectedTableId!]!) {
+              _selectedTableOrders = [];
+            }
+          });
+        }
+      }
+    } catch (e) {
+      // Real-time da umumiy xatolikni ham ignore qilamiz
+    }
+  }
+
+  // 5. _fetchOrdersForTableSilently - real-time yangilanish uchun optimallashtirilgan (MUHIM O'ZGARISH: chuqurroq taqqoslash)
+  Future<void> _fetchOrdersForTableSilently(String tableId) async {
+    if (_token == null) return;
+
+    try {
+      final response = await http
+          .get(
+        Uri.parse("${ApiConfig.baseUrl}/orders/table/$tableId"),
+        headers: {
+          'Authorization': 'Bearer ${widget.token}',
+          'Content-Type': 'application/json',
+        },
+      )
+          .timeout(const Duration(seconds: 2));
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        final orders =
+        data
+            .map((json) => Order.fromJson(json))
+            .where((order) => order.status == 'pending')
+            .toList();
+
+        // Zakazlarni id bo'yicha sort qilish
+        orders.sort((a, b) => a.id.compareTo(b.id));
+
+        // Item'larni foodId bo'yicha sort qilish (har bir order uchun)
+        for (var order in orders) {
+          order.items.sort((a, b) => a.foodId.compareTo(b.foodId));
+        }
+
+        // Cache yangilash
+        _ordersCache[tableId] = orders;
+
+        // Faqat tanlangan stol va loading holatida bo'lmasa yangilash
+        if (mounted && _selectedTableId == tableId && !_isLoadingOrders) {
+          // O'zgarishni tekshirish (chuqurroq: miqdor va foodId)
+          bool hasChanged = _selectedTableOrders.length != orders.length;
+
+          if (!hasChanged) {
+            // Joriy va yangi list'larni sort qilgan nusxalar bilan taqqoslash
+            List<Order> currentSorted = List.from(_selectedTableOrders)
+              ..sort((a, b) => a.id.compareTo(b.id));
+            for (var ord in currentSorted) {
+              ord.items.sort((a, b) => a.foodId.compareTo(b.foodId));
+            }
+
+            List<Order> newSorted = List.from(orders);
+
+            for (int i = 0; i < newSorted.length; i++) {
+              if (newSorted[i].id != currentSorted[i].id ||
+                  newSorted[i].items.length != currentSorted[i].items.length) {
+                hasChanged = true;
+                break;
+              }
+
+              // Item'larni chuqurroq tekshirish (miqdor va foodId)
+              for (int j = 0; j < newSorted[i].items.length; j++) {
+                if (newSorted[i].items[j].foodId !=
+                    currentSorted[i].items[j].foodId ||
+                    newSorted[i].items[j].quantity !=
+                        currentSorted[i].items[j].quantity) {
+                  hasChanged = true;
+                  break;
+                }
+              }
+              if (hasChanged) break;
+            }
+          }
+
+          if (hasChanged) {
+            setState(() {
+              _selectedTableOrders = orders;
+            });
+            print("🔄 Real-time yangilanish: ${orders.length} zakaz");
+          }
+        }
+
+        // Stol statusini ham yangilash
+        if (mounted) {
+          final wasOccupied = _tableOccupiedStatus[tableId] ?? false;
+          final isOccupied = orders.isNotEmpty;
+          final currentOwner = orders.isNotEmpty ? orders.first.userId : null;
+
+          if (wasOccupied != isOccupied ||
+              (currentOwner != null && _tableOwners[tableId] != currentOwner)) {
+            setState(() {
+              _tableOccupiedStatus[tableId] = isOccupied;
+              if (isOccupied && currentOwner != null) {
+                _tableOwners[tableId] = currentOwner;
+              } else {
+                _tableOwners.remove(tableId);
+              }
+            });
+          }
+        }
+      }
+    } catch (e) {
+      // Silent method - xatolikni ignore qilish
+    }
+  }
+
+  // 6. Cache tozalash va yangilash - optimallashtirilgan
+  void _clearCacheAndRefresh() {
+    print("🗑️ Cache tozalanmoqda va yangilanmoqda...");
+
+    // Faqat tanlangan stolning cache ini tozalash
+    if (_selectedTableId != null) {
+      _ordersCache.remove(_selectedTableId!);
+    }
+
+    // Darhol yangilash
+    Future.microtask(() {
+      if (_selectedTableId != null) {
+        _fetchOrdersForTable(_selectedTableId!);
+      }
+      _checkTableStatusesRealTime();
+    });
+  }
+
+  // 7. _showOrderScreenDialog metodini yangilash
+  void _showOrderScreenDialog(String tableId) {
+    // Faqat o'z ofitsiantining stollarida yangi hisob ochishga ruxsat
+    bool isOccupied = _tableOccupiedStatus[tableId] ?? false;
+    String? tableOwner = _tableOwners[tableId];
+
+    if (isOccupied && tableOwner != null && tableOwner != widget.user.id) {
+      showCenterSnackBar(
+        context,
+        'Bu stol boshqa ofitsiantga tegishli!',
+        color: Colors.green,
+      );
+      return;
+    }
+
+    String? formattedOrderNumber =
+    _selectedTableOrders.isNotEmpty
+        ? _selectedTableOrders.first.formatted_order_number
+        : '';
+
+    print("Formatted order number: $formattedOrderNumber");
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog.fullscreen(
+          child: OrderScreenContent(
+            formatted_order_number: formattedOrderNumber,
+            tableId: tableId,
+            tableName: _selectedTableName,
+            user: widget.user,
+            onOrderCreated: () {
+              // Cache tozalash va yangilash
+              _clearCacheAndRefresh();
+            },
+            token: widget.token,
+          ),
+        );
+      },
+    );
+  }
+
+  // 8. _closeOrder metodini yangilash - optimallashtirilgan
+  Future<void> _closeOrder(Order order) async {
+    if (order.userId != widget.user.id) {
+      showCenterSnackBar(
+        context,
+        'Faqat o\'zingiz yaratgan zakazni yopa olasiz!',
+        color: Colors.green,
+      );
+      return;
+    }
+
+    try {
+      setState(() => order.isProcessing = true);
+
+      bool success = await closeOrder(order.id);
+
+      if (success) {
+        print("✅ Zakaz yopildi: ${order.id}");
+
+        // Lokal holatni darhol yangilash
+        setState(() {
+          _selectedTableOrders.removeWhere((o) => o.id == order.id);
+
+          // Agar zakazlar qolmagan bo'lsa, stolni bo'sh qilib qo'yish
+          if (_selectedTableOrders.isEmpty && _selectedTableId != null) {
+            _tableOccupiedStatus[_selectedTableId!] = false;
+            _tableOwners.remove(_selectedTableId!);
+          }
+        });
+
+        // Cache ni tozalash
+        if (_selectedTableId != null) {
+          _ordersCache[_selectedTableId!] = _selectedTableOrders;
+        }
+
+        // Real-time statusni yangilash (background da)
+        Future.microtask(() => _checkTableStatusesRealTime());
+
+        showCenterSnackBar(context, 'Zakaz yopildi', color: Colors.green);
+      } else {
+        showCenterSnackBar(context, 'Xatolik yuz berdi');
+      }
+    } catch (e) {
+      showCenterSnackBar(context, 'Xatolik: $e');
+    } finally {
+      if (mounted) setState(() => order.isProcessing = false);
+    }
+  }
+
+  // 4. _checkTableStatuses metodini tuzatish
+  Future<void> _checkTableStatuses() async {
+    try {
+      Map<String, bool> newStatus = {};
+      Map<String, String> newOwners = {};
+
+      // Parallel requests bilan barcha stollarni tekshirish
+      final futures = _tables.map((table) async {
+        try {
+          final response = await http
+              .get(
+            Uri.parse('${ApiConfig.baseUrl}/orders/table/${table.id}'),
+            headers: {
+              'Authorization': 'Bearer ${widget.token}',
+              'Content-Type': 'application/json',
+            },
+          )
+              .timeout(const Duration(seconds: 5));
+
+          if (response.statusCode == 200) {
+            final List<dynamic> orders = jsonDecode(response.body);
+            final pendingOrders =
+            orders.where((o) => o['status'] == 'pending').toList();
+
+            newStatus[table.id] = pendingOrders.isNotEmpty;
+            if (pendingOrders.isNotEmpty) {
+              newOwners[table.id] = pendingOrders.first['user_id'] ?? '';
+            }
+
+            // Cache yangilanishi faqat tanlangan stol bo'lmasa
+            if (_selectedTableId != table.id) {
+              final orderObjects =
+              orders
+                  .map((json) => Order.fromJson(json))
+                  .where((order) => order.status == 'pending')
+                  .toList();
+
+              // Sort qilish
+              orderObjects.sort((a, b) => a.id.compareTo(b.id));
+
+              _ordersCache[table.id] = orderObjects;
+            }
+          } else {
+            newStatus[table.id] = false;
+          }
+        } catch (e) {
+          print("Stol ${table.id} uchun xatolik: $e");
+          newStatus[table.id] = _tableOccupiedStatus[table.id] ?? false;
+        }
+      });
+
+      await Future.wait(futures);
+
+      if (mounted) {
+        bool statusChanged = !_mapsEqual(newStatus, _tableOccupiedStatus);
+        bool ownerChanged = !_mapsEqualString(newOwners, _tableOwners);
+
+        if (statusChanged || ownerChanged) {
+          setState(() {
+            _tableOccupiedStatus = newStatus;
+            _tableOwners = newOwners;
+          });
+        }
+      }
+    } catch (e) {
+      print("Status check error: $e");
+    }
+  }
+
   // Mahsulotlar va kategoriyalarni yuklash
   Future<void> _loadProductsAndCategories() async {
     setState(() => _isLoadingProducts = true);
     try {
       String baseUrl = "${ApiConfig.baseUrl}/";
-
-      // Mahsulotlarni yuklash
       Future<List<Ovqat>> fetchProducts() async {
         final url = Uri.parse("$baseUrl/foods/list");
         final response = await http.get(
@@ -199,7 +669,9 @@ class _PosScreenState extends State<PosScreen> {
           }
           throw Exception("API javobida mahsulotlar ro'yxati topilmadi");
         } else {
-          throw Exception("Mahsulotlar olishda xatolik: ${response.statusCode}");
+          throw Exception(
+            "Mahsulotlar olishda xatolik: ${response.statusCode}",
+          );
         }
       }
 
@@ -230,10 +702,7 @@ class _PosScreenState extends State<PosScreen> {
         }
       }
 
-      final futures = await Future.wait([
-        fetchCategories(),
-        fetchProducts(),
-      ]);
+      final futures = await Future.wait([fetchCategories(), fetchProducts()]);
 
       if (mounted) {
         setState(() {
@@ -275,25 +744,33 @@ class _PosScreenState extends State<PosScreen> {
 
   // Bekor qilingan mahsulotni printerga yuborish
   Future<void> _printCancelledItem(
-      OrderItem item, int cancelQuantity, String reason, Order order) async {
+      OrderItem item,
+      int cancelQuantity,
+      String reason,
+      Order order,
+      ) async {
     try {
       debugPrint('🖨️ Bekor qilingan mahsulot print qilinmoqda');
 
       // Mahsulotning kategoriyasini topish
       final product = _allProducts.firstWhere(
             (p) => p.id == item.foodId,
-        orElse: () => Ovqat(
+        orElse:
+            () => Ovqat(
           id: '',
           name: 'Noma\'lum',
           price: 0,
           categoryId: '',
-          subcategory: null, categoryName: '', subcategories: [],
+          subcategory: null,
+          categoryName: '',
+          subcategories: [],
         ),
       );
 
       final category = _categories.firstWhere(
             (cat) => cat.id == product.categoryId,
-        orElse: () => Category(
+        orElse:
+            () => Category(
           id: '',
           title: '',
           subcategories: [],
@@ -306,8 +783,8 @@ class _PosScreenState extends State<PosScreen> {
       if (category.printerIp.isNotEmpty && category.printerIp != 'null') {
         final printData = {
           'orderNumber': order.formatted_order_number,
-          'waiter_name': widget.user.firstName ?? 'Nomaplan, orElse: () => null',
-          'table_name' : _selectedTableName ?? 'N/A',
+          'waiter_name': widget.user.firstName ?? 'Noma\'lum',
+          'table_name': _selectedTableName ?? 'N/A',
           'item_name': item.name ?? 'Noma\'lum mahsulot',
           'cancel_quantity': cancelQuantity,
           'reason': reason,
@@ -316,7 +793,9 @@ class _PosScreenState extends State<PosScreen> {
 
         final printBytes = _createCancelPrintData(printData);
         await _printToSocket(category.printerIp, printBytes);
-        debugPrint('✅ Bekor qilingan mahsulot ${category.printerIp} ga yuborildi');
+        debugPrint(
+          '✅ Bekor qilingan mahsulot ${category.printerIp} ga yuborildi',
+        );
       } else {
         debugPrint('⚠️ Kategoriya printeri topilmadi');
       }
@@ -345,89 +824,6 @@ class _PosScreenState extends State<PosScreen> {
       );
     } else {
       throw Exception("Xatolik: ${response.statusCode}");
-    }
-  }
-
-  void _startRealTimeUpdates() {
-    _realTimeTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
-      _checkTableStatuses();
-      // Tanlangan stol uchun zakazlarni background'da yangilash
-      if (_selectedTableId != null) {
-        _fetchOrdersForTableSilently(_selectedTableId!);
-      }
-    });
-  }
-
-  Future<void> _checkTableStatuses() async {
-    try {
-      Map<String, bool> newStatus = {};
-      Map<String, String> newOwners = {};
-
-      // Parallel requests bilan barcha stollarni bir vaqtda tekshirish
-      final futures = _tables.map((table) async {
-        try {
-          final response = await http
-              .get(
-            Uri.parse(
-              '${ApiConfig.baseUrl}/orders/table/${table.id}',
-            ),
-            headers: {
-              'Authorization': 'Bearer ${widget.token}',
-              'Content-Type': 'application/json',
-            },
-          )
-              .timeout(const Duration(seconds: 2));
-          if (response.statusCode == 200) {
-            final List<dynamic> orders = jsonDecode(response.body);
-            final pendingOrders =
-            orders.where((o) => o['status'] == 'pending').toList();
-
-            newStatus[table.id] = pendingOrders.isNotEmpty;
-            if (pendingOrders.isNotEmpty) {
-              newOwners[table.id] = pendingOrders.first['user_id'] ?? '';
-            }
-            // Zakazlar cache'ini ham yangilash
-            final orderObjects =
-            orders
-                .map((json) => Order.fromJson(json))
-                .where((order) => order.status == 'pending')
-                .toList();
-
-            if (orderObjects.isNotEmpty || _ordersCache.containsKey(table.id)) {
-              _ordersCache[table.id] = orderObjects;
-            }
-          } else {
-            newStatus[table.id] = false;
-          }
-        } catch (e) {
-          newStatus[table.id] = _tableOccupiedStatus[table.id] ?? false;
-        }
-      });
-
-      await Future.wait(futures);
-
-      if (mounted) {
-        bool statusChanged = !_mapsEqual(newStatus, _tableOccupiedStatus);
-        bool ownerChanged = !_mapsEqualString(newOwners, _tableOwners);
-
-        if (statusChanged || ownerChanged) {
-          setState(() {
-            _tableOccupiedStatus = newStatus;
-            _tableOwners = newOwners;
-
-            // Tanlangan stol uchun zakazlarni yangilash
-            if (_selectedTableId != null &&
-                _ordersCache.containsKey(_selectedTableId!)) {
-              final newOrders = _ordersCache[_selectedTableId!]!;
-              if (!_ordersAreEqual(_selectedTableOrders, newOrders)) {
-                _selectedTableOrders = newOrders;
-              }
-            }
-          });
-        }
-      }
-    } catch (e) {
-      print("Status check error: $e");
     }
   }
 
@@ -481,122 +877,6 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 
-  void _handleTableTap(String tableName, String tableId) {
-    setState(() {
-      _selectedTableName = tableName;
-      _selectedTableId = tableId;
-      // Cache'dan darhol ko'rsatish
-      if (_ordersCache.containsKey(tableId)) {
-        _selectedTableOrders = _ordersCache[tableId]!;
-        _isLoadingOrders = false;
-      } else {
-        _isLoadingOrders = true;
-      }
-    });
-
-    // Background'da yangi ma'lumotlarni olish
-    _fetchOrdersForTable(tableId);
-  }
-
-  Future<void> _fetchOrdersForTable(String tableId) async {
-    if (_token == null) return;
-
-    if (!_ordersCache.containsKey(tableId)) {
-      setState(() => _isLoadingOrders = true);
-    }
-
-    try {
-      final response = await http
-          .get(
-        Uri.parse("${ApiConfig.baseUrl}/orders/table/$tableId"),
-        headers: {
-          'Authorization': 'Bearer ${widget.token}',
-          'Content-Type': 'application/json',
-        },
-      )
-          .timeout(const Duration(seconds: 2));
-      if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        final orders =
-        data
-            .map((json) => Order.fromJson(json))
-            .where((order) => order.status == 'pending')
-            .toList();
-
-        // Cache'ga saqlash
-        _ordersCache[tableId] = orders;
-
-        if (mounted && _selectedTableId == tableId) {
-          setState(() {
-            _selectedTableOrders = orders;
-            _isLoadingOrders = false;
-          });
-        }
-      } else {
-        _ordersCache[tableId] = [];
-        if (mounted && _selectedTableId == tableId) {
-          setState(() {
-            _selectedTableOrders = [];
-            _isLoadingOrders = false;
-          });
-        }
-      }
-    } catch (e) {
-      if (mounted &&
-          _selectedTableId == tableId &&
-          !_ordersCache.containsKey(tableId)) {
-        setState(() {
-          _selectedTableOrders = [];
-          _isLoadingOrders = false;
-        });
-      }
-      print("Orders loading error: $e");
-    }
-  }
-
-  // Background'da loading ko'rsatmasdan yangilash - tezroq
-  Future<void> _fetchOrdersForTableSilently(String tableId) async {
-    if (_token == null) return;
-
-    try {
-      final response = await http
-          .get(
-        Uri.parse("${ApiConfig.baseUrl}/orders/table/$tableId"),
-        headers: {
-          'Authorization': 'Bearer ${widget.token}',
-          'Content-Type': 'application/json',
-        },
-      )
-          .timeout(const Duration(seconds: 1));
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        final orders =
-        data
-            .map((json) => Order.fromJson(json))
-            .where((order) => order.status == 'pending')
-            .toList();
-
-        _ordersCache[tableId] = orders;
-
-        // Faqat tanlangan stol bo'lsa va o'zgarish bo'lsa yangilash
-        if (mounted && _selectedTableId == tableId) {
-          bool hasChanged =
-              _selectedTableOrders.length != orders.length ||
-                  !_ordersAreEqual(_selectedTableOrders, orders);
-
-          if (hasChanged) {
-            setState(() {
-              _selectedTableOrders = orders;
-            });
-          }
-        }
-      }
-    } catch (e) {
-      // Xatolikni ignore qilish - background jarayon
-    }
-  }
-
   bool _ordersAreEqual(List<Order> orders1, List<Order> orders2) {
     if (orders1.length != orders2.length) return false;
     for (int i = 0; i < orders1.length; i++) {
@@ -604,48 +884,6 @@ class _PosScreenState extends State<PosScreen> {
     }
     return true;
   }
-
-  void _showOrderScreenDialog(String tableId) {
-    // Faqat o'z ofitsiantining stollarida yangi hisob ochishga ruxsat
-    bool isOccupied = _tableOccupiedStatus[tableId] ?? false;
-    String? tableOwner = _tableOwners[tableId];
-
-    if (isOccupied && tableOwner != null && tableOwner != widget.user.id) {
-      showCenterSnackBar(
-        context,
-        'Bu stol boshqa ofitsiantga tegishli!',
-        color: Colors.green,
-      );
-      return;
-    }
-// Mavjud buyurtmadan formatted_order_number ni olish
-    String? formattedOrderNumber = _selectedTableOrders.isNotEmpty
-        ? _selectedTableOrders.first.formatted_order_number
-        : '';
-
-    print("Formatted order number: $formattedOrderNumber"); // Debugging uchun
-
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (BuildContext context) {
-        return Dialog.fullscreen(
-          child: OrderScreenContent(
-            formatted_order_number: formattedOrderNumber, // YANGI qo'shildi
-            tableId: tableId,
-            tableName: _selectedTableName,
-            user: widget.user,
-            onOrderCreated: () {
-              _fetchOrdersForTable(tableId);
-              _checkTableStatuses();
-            },
-            token: widget.token,
-          ),
-        );
-      },
-    );
-  }
-  // Zakaz controller
 
   Future<bool> closeOrder(String orderId) async {
     const String apiUrl = "${ApiConfig.baseUrl}/orders/close/";
@@ -666,45 +904,6 @@ class _PosScreenState extends State<PosScreen> {
     } catch (e) {
       print("Close order error: $e");
       return false;
-    }
-  }
-
-  Future<void>  _closeOrder(Order order) async {
-    if (order.userId != widget.user.id) {
-      showCenterSnackBar(
-        context,
-        'Faqat o\'zingiz yaratgan zakazni yopa olasiz!',
-        color: Colors.green,
-      );
-      return;
-    }
-
-    try {
-      setState(() => order.isProcessing = true);
-
-      bool success = await closeOrder(order.id);
-
-      if (success) {
-        // Cache'dan ham olib tashlash
-        if (_ordersCache.containsKey(_selectedTableId!)) {
-          _ordersCache[_selectedTableId!]!.removeWhere((o) => o.id == order.id);
-        }
-
-        setState(() {
-          _selectedTableOrders.removeWhere((o) => o.id == order.id);
-        });
-
-        // Darhol status yangilash
-        Future.microtask(() => _checkTableStatuses());
-
-        showCenterSnackBar(context, 'Zakaz yopildi', color: Colors.green);
-      } else {
-        showCenterSnackBar(context, 'Xatolik yuz berdi');
-      }
-    } catch (e) {
-      showCenterSnackBar(context, 'Xatolik: $e');
-    } finally {
-      if (mounted) setState(() => order.isProcessing = false);
     }
   }
 
@@ -761,11 +960,13 @@ class _PosScreenState extends State<PosScreen> {
       int itemIndex,
       Order order,
       ) async {
-    String reason = reasons[0];  // Default sabab
-    String notes = "ixtiyor";    // API uchun izoh
-    int cancelQuantity = 1;      // Default miqdor
+    String reason = reasons[0]; // Default sabab
+    String notes = "ixtiyor"; // API uchun izoh
+    int cancelQuantity = 1; // Default miqdor
     final item = order.items[itemIndex];
-    final TextEditingController quantityController = TextEditingController(text: "1");
+    final TextEditingController quantityController = TextEditingController(
+      text: "1",
+    );
 
     await showDialog(
       context: context,
@@ -803,7 +1004,8 @@ class _PosScreenState extends State<PosScreen> {
                   DropdownButton<String>(
                     isExpanded: true,
                     value: reason,
-                    items: reasons.map((String r) {
+                    items:
+                    reasons.map((String r) {
                       return DropdownMenuItem<String>(
                         value: r,
                         child: Text(r),
@@ -885,8 +1087,7 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
-
-// _deleteItem funksiyasini yangilash
+  // _deleteItem funksiyasini yangilash
   Future<void> _deleteItem(
       String orderId,
       String foodId,
@@ -954,9 +1155,7 @@ class _PosScreenState extends State<PosScreen> {
     });
   }
 
-
-
-// YANGI: Bekor qilingan mahsulot uchun print ma'lumotini yaratish
+  // YANGI: Bekor qilingan mahsulot uchun print ma'lumotini yaratish
   List<int> _createCancelPrintData(Map<String, dynamic> data) {
     final bytes = <int>[];
     const printerWidth = 32;
@@ -1155,8 +1354,10 @@ class _PosScreenState extends State<PosScreen> {
                     context,
                     MaterialPageRoute(
                       builder:
-                          (context) =>
-                          OrderTablePage(waiterName: widget.user.firstName, token: widget.token,),
+                          (context) => OrderTablePage(
+                        waiterName: widget.user.firstName,
+                        token: widget.token,
+                      ),
                     ),
                   );
                 },
@@ -1216,7 +1417,7 @@ class _PosScreenState extends State<PosScreen> {
   Widget _buildTablesGrid(bool isDesktop, bool isTablet) {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: Colors.white70,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(
@@ -1319,97 +1520,118 @@ class _PosScreenState extends State<PosScreen> {
       bool isOccupied,
       bool isOwnTable,
       ) {
-    Color cardColor;
-    Color textColor;
-    String statusText;
-
-    if (isOccupied && !isOwnTable) {
-      cardColor = AppColors.error.withOpacity(0.1);
-      textColor = AppColors.error;
-      statusText = "Boshqa ofitsiant";
-    } else if (isOccupied && isOwnTable) {
-      cardColor = AppColors.accent.withOpacity(0.1);
-      textColor = AppColors.accent;
-      statusText = "Mening stolim";
-    } else if (isSelected) {
-      cardColor = Colors.green.withOpacity(0.1);
-      textColor = Colors.green;
-      statusText = "Tanlangan";
-    } else {
-      cardColor = AppColors.lightGrey;
-      textColor = AppColors.grey;
-      statusText = "Bo'sh";
+    double _scaledFont(
+        double base,
+        double scale, {
+          double min = 10,
+          double max = 22,
+        }) {
+      double value = base * scale;
+      if (value < min) return min;
+      if (value > max) return max;
+      return value;
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color:
-          isOccupied && !isOwnTable
-              ? AppColors.error
-              : isOccupied && isOwnTable
-              ? AppColors.accent
-              : isSelected
-              ? Colors.green
-              : AppColors.lightGrey,
-          width: 2,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: textColor,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.table_bar,
-                size: 28,
-                color: AppColors.white,
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        double scale = constraints.maxWidth / 400; // 400 = dizayn bazaviy eni
+
+        Color cardColor;
+        Color textColor;
+        String statusText;
+
+        if (isOccupied && !isOwnTable) {
+          cardColor = AppColors.error.withOpacity(0.1);
+          textColor = AppColors.error;
+          statusText = "Boshqa ofitsiant";
+        } else if (isOccupied && isOwnTable) {
+          cardColor = AppColors.accent.withOpacity(0.1);
+          textColor = AppColors.accent;
+          statusText = "Mening stolim";
+        } else if (isSelected) {
+          cardColor = Colors.green.withOpacity(0.1);
+          textColor = Colors.green;
+          statusText = "Tanlangan";
+        } else {
+          cardColor = Colors.green.withOpacity(0.1);
+          textColor = Colors.green;
+          statusText = "Bo'sh";
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: cardColor,
+            borderRadius: BorderRadius.circular(12 * scale),
+            border: Border.all(
+              color:
+              isOccupied && !isOwnTable
+                  ? AppColors.error
+                  : isOccupied && isOwnTable
+                  ? AppColors.accent
+                  : isSelected
+                  ? Colors.green
+                  : Colors.green, // ✅ Bo'sh holat ham yashil
+              width: 2 * scale,
             ),
-            const SizedBox(height: 12),
-            Text(
-              "${table.number}",
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: textColor,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: textColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: textColor, width: 1),
-              ),
-              child: Text(
-                statusText,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: textColor,
-                  fontWeight: FontWeight.w600,
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(16 * scale),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: EdgeInsets.all(12 * scale),
+                  decoration: BoxDecoration(
+                    color: textColor,
+                    borderRadius: BorderRadius.circular(10 * scale),
+                  ),
+                  child: Icon(
+                    Icons.table_bar,
+                    size: 28 * scale,
+                    color: AppColors.white,
+                  ),
                 ),
-              ),
+                SizedBox(height: 12 * scale),
+                Text(
+                  "${table.number}",
+                  style: TextStyle(
+                    fontSize: _scaledFont(18, scale, min: 14, max: 22),
+                    fontWeight: FontWeight.bold,
+                    color: textColor,
+                  ),
+                ),
+                SizedBox(height: 8 * scale),
+                Container(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 8 * scale,
+                    vertical: 4 * scale,
+                  ),
+                  decoration: BoxDecoration(
+                    color: textColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6 * scale),
+                    border: Border.all(color: textColor, width: 1 * scale),
+                  ),
+                  child: Text(
+                    statusText,
+                    style: TextStyle(
+                      fontSize: _scaledFont(11, scale, min: 10, max: 14),
+                      color: textColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildOrderDetails() {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: Colors.white70,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(
@@ -1543,268 +1765,298 @@ class _PosScreenState extends State<PosScreen> {
   Widget _buildOrderCard(Order order, int index) {
     final isOwnOrder = order.userId == widget.user.id;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.lightGrey),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        double width = constraints.maxWidth;
+
+        // 📌 Ekran o'lchamiga qarab dinamik style
+        double fontSize = width < 400 ? 12 : 14;
+        double titleFontSize = width < 400 ? 14 : 16;
+        double buttonFontSize = width < 400 ? 12 : 14;
+        double buttonHeight = width < 400 ? 40 : 44;
+
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.white70,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.lightGrey),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("${order.formatted_order_number}", style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                  color: AppColors.primary,
-                ),),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.warning,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Text(
-                    'Kutilmoqda',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (isOwnOrder) ...[
-              const SizedBox(height: 8),
-              Text(
-                "Ofitsiant: ${order.firstName}",
-                style: const TextStyle(fontSize: 13, color: AppColors.grey),
-              ),
-              Text(
-                "Vaqt: ${_formatDateTime(order.createdAt)}",
-                style: const TextStyle(fontSize: 13, color: AppColors.grey),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                "Mahsulotlar:",
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              ...order.items.map(
-                    (item) => Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.lightGrey,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          "${item.name ?? 'Mahsulot'} x${item.quantity}",
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ),
-                      if (item.price != null)
-                        Text(
-                          "${NumberFormat('#,##0', 'uz').format(item.price! * item.quantity)} so'm",
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.accent,
-                          ),
-                        ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.delete,
-                          color: AppColors.error,
-                          size: 20,
-                        ),
-                        onPressed:
-                        isOwnOrder
-                            ? () => showCancelDialog(
-                          order.id,
-                          item.foodId,
-                          order.items.indexOf(item),
-                          order,
-                        )
-                            : null,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.accent.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
+                // 🔹 Order header
+                Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Row(
+                    Text(
+                      "${order.formatted_order_number}",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: titleFontSize,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'Kutilmoqda',
+                        style: TextStyle(
+                          fontSize: fontSize,
+                          color: AppColors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                if (isOwnOrder) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    "Ofitsiant: ${order.firstName}",
+                    style: TextStyle(fontSize: fontSize, color: AppColors.grey),
+                  ),
+                  Text(
+                    "Vaqt: ${_formatDateTime(order.createdAt)}",
+                    style: TextStyle(fontSize: fontSize, color: AppColors.grey),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    "Mahsulotlar:",
+                    style: TextStyle(
+                      fontSize: titleFontSize,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // 🔹 Mahsulotlar ro'yxati
+                  ...order.items.map(
+                        (item) => Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.lightGrey,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              "${item.name ?? 'Mahsulot'} x${item.quantity}",
+                              style: TextStyle(
+                                fontSize: fontSize,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                          if (item.price != null)
+                            Text(
+                              "${NumberFormat('#,##0', 'uz').format(item.price! * item.quantity)} so'm",
+                              style: TextStyle(
+                                fontSize: fontSize,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.accent,
+                              ),
+                            ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.delete,
+                              color: AppColors.error,
+                              size: 20,
+                            ),
+                            onPressed:
+                            isOwnOrder
+                                ? () => showCancelDialog(
+                              order.id,
+                              item.foodId,
+                              order.items.indexOf(item),
+                              order,
+                            )
+                                : null,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.accent.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Icon(Icons.payments, color: AppColors.accent, size: 18),
-                        SizedBox(width: 8),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.payments,
+                              color: AppColors.accent,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              "Jami:",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: titleFontSize,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
                         Text(
-                          "Jami:",
+                          "${NumberFormat('#,##0', 'uz').format(order.totalPrice)} so'm",
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: AppColors.primary,
+                            fontSize: titleFontSize,
+                            color: AppColors.accent,
                           ),
                         ),
                       ],
                     ),
-                    Text(
-                      "${NumberFormat('#,##0', 'uz').format(order.totalPrice)} so'm",
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: AppColors.accent,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              // YANGI: Mahsulot qo'shish va Zakazni yopish tugmalari
-              Row(
-                children: [
-                  // Mahsulot qo'shish tugmasi
-                  Expanded(
-                    child: SizedBox(
-                      height: 44,
-                      child:
-                      order.isProcessing
-                          ? Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.lightGrey,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                            strokeWidth: 2,
-                          ),
-                        ),
-                      )
-                          : ElevatedButton.icon(
-                        onPressed: () => _showAddItemsDialog(order),
-                        icon: const Icon(
-                          Icons.add_shopping_cart,
-                          size: 18,
-                        ),
-                        label: const Text(
-                          "Qo'shish",
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: AppColors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                    ),
                   ),
-                  const SizedBox(width: 12),
-                  // Zakazni yopish tugmasi
-                  Expanded(
-                    child: SizedBox(
-                      height: 44,
-                      child:
-                      order.isProcessing
-                          ? Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.lightGrey,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                            strokeWidth: 2,
-                          ),
-                        ),
-                      )
-                          : ElevatedButton.icon(
-                        onPressed: () => _closeOrder(order),
-                        icon: const Icon(Icons.check_circle, size: 18),
-                        label: const Text(
-                          "Yopish",
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.accent,
-                          foregroundColor: AppColors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+
+                  const SizedBox(height: 16),
+
+                  // 🔹 Tugmalar (responsive)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          height: buttonHeight,
+                          child:
+                          order.isProcessing
+                              ? Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.lightGrey,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Center(
+                              child: CircularProgressIndicator(
+                                color: AppColors.primary,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          )
+                              : ElevatedButton.icon(
+                            onPressed: () => _showAddItemsDialog(order),
+                            icon: const Icon(
+                              Icons.add_shopping_cart,
+                              size: 18,
+                            ),
+                            label: Text(
+                              "Qo'shish",
+                              style: TextStyle(
+                                fontSize: buttonFontSize,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: AppColors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
                           ),
                         ),
                       ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: SizedBox(
+                          height: buttonHeight,
+                          child:
+                          order.isProcessing
+                              ? Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.lightGrey,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Center(
+                              child: CircularProgressIndicator(
+                                color: AppColors.primary,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          )
+                              : ElevatedButton.icon(
+                            onPressed: () => _closeOrder(order),
+                            icon: const Icon(
+                              Icons.check_circle,
+                              size: 18,
+                            ),
+                            label: Text(
+                              "Yopish",
+                              style: TextStyle(
+                                fontSize: buttonFontSize,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.accent,
+                              foregroundColor: AppColors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppColors.error.withOpacity(0.3),
+                      ),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.lock, size: 20, color: AppColors.error),
+                        SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            "Bu zakaz boshqa ofitsiantga tegishli",
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: AppColors.error,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
-              ),
-            ] else ...[
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.error.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.error.withOpacity(0.3)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.lock, size: 20, color: AppColors.error),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        "Bu zakaz boshqa ofitsiantga tegishli",
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: AppColors.error,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1816,7 +2068,8 @@ class _PosScreenState extends State<PosScreen> {
       builder: (BuildContext context) {
         return Dialog.fullscreen(
           child: OrderScreenContent(
-            formatted_order_number: order.formatted_order_number, // YANGI qo'shildi
+            formatted_order_number:
+            order.formatted_order_number, // YANGI qo'shildi
             tableId: order.tableId,
             tableName: _selectedTableName,
             user: widget.user,
@@ -1850,8 +2103,8 @@ class OrderScreenContent extends StatefulWidget {
   final VoidCallback? onOrderCreated;
   final String? tableName;
   final token;
-  final bool isAddingToExistingOrder; // YANGI
-  final String? existingOrderId; // YANGI
+  final bool isAddingToExistingOrder;
+  final String? existingOrderId;
   final String formatted_order_number;
 
   const OrderScreenContent({
@@ -1861,9 +2114,9 @@ class OrderScreenContent extends StatefulWidget {
     this.onOrderCreated,
     this.tableName,
     required this.token,
-    this.isAddingToExistingOrder = false, // YANGI
-    this.existingOrderId, // YANGI
-    required this.formatted_order_number, // YANGI
+    this.isAddingToExistingOrder = false,
+    this.existingOrderId,
+    required this.formatted_order_number,
   });
 
   @override
@@ -1878,32 +2131,72 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
   List<Ovqat> _allProducts = [];
   List<Ovqat> _filteredProducts = [];
   bool _isLoading = true;
+  bool _categoriesLoaded = false; // Kategoriyalar alohida loading
   String? _token;
   bool _isSubmitting = false;
-  String _searchQuery = ''; // Qidirish so'rovi uchun o'zgaruvchi
+  String _searchQuery = '';
 
-  final Map<String, int> _cart = {};
+  final Map<String, Map<String, dynamic>> _cart = {};
   final NumberFormat _currencyFormatter = NumberFormat('#,##0', 'uz_UZ');
 
-  static List<Category>? _cachedCategories;
-  static List<Ovqat>? _cachedProducts;
+  // Yangi cache tizimi
+  static Map<String, dynamic>? _memoryCache;
   static DateTime? _lastCacheTime;
   static const Duration _cacheExpiry = Duration(minutes: 10);
 
   @override
   void initState() {
     super.initState();
-    _initializeApp();
+    _initializeAppFast();
   }
 
-  Future<void> _initializeApp() async {
-    _initializeTokenAsync();
-    await _loadDataFast();
+  void _updateCart(String productId, int change, {double? kg}) {
+    setState(() {
+      final product = _findProductById(productId);
+      if (product == null) {
+        debugPrint('Xatolik: Mahsulot topilmadi, ID: $productId');
+        return;
+      }
+
+      final currentEntry = _cart[productId] ?? {'quantity': 0.0, 'kg': 1.0};
+
+      if (product.unit == 'kg') {
+        // Kg mahsulotlari uchun kg ni quantity sifatida saqlash
+        final newKg = kg ?? currentEntry['kg'];
+        if (change > 0 && newKg > 0) {
+          _cart[productId] = {'quantity': newKg, 'kg': newKg};
+          debugPrint('Kg mahsulot qo‘shildi: ${product.name}, kg: $newKg');
+        } else {
+          _cart.remove(productId);
+          debugPrint('Mahsulot o‘chirildi: ${product.name}');
+        }
+      } else {
+        // Oddiy mahsulotlar uchun
+        final newQty = currentEntry['quantity'] + change;
+        if (newQty <= 0) {
+          _cart.remove(productId);
+          debugPrint('Mahsulot o‘chirildi: ${product.name}');
+        } else {
+          _cart[productId] = {'quantity': newQty, 'kg': currentEntry['kg']};
+          debugPrint(
+            'Oddiy mahsulot qo‘shildi: ${product.name}, soni: $newQty',
+          );
+        }
+      }
+    });
   }
 
-  void _initializeTokenAsync() async {
+  Future<void> _initializeAppFast() async {
+    // Token va kategoriyalarni parallel yuklash
+    await Future.wait([_initializeToken(), _loadCategoriesFast()]);
+
+    // Mahsulotlarni background da yuklash
+    _loadProductsInBackground();
+  }
+
+  Future<void> _initializeToken() async {
     try {
-      _token = await AuthService.getToken();
+      _token = widget.token ?? await AuthService.getToken();
       if (_token == null) {
         await AuthService.loginAndPrintToken();
         _token = await AuthService.getToken();
@@ -1914,112 +2207,127 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
   }
 
   bool _isCacheValid() {
-    return _cachedCategories != null &&
-        _cachedProducts != null &&
+    return _memoryCache != null &&
         _lastCacheTime != null &&
         DateTime.now().difference(_lastCacheTime!) < _cacheExpiry;
   }
 
-  Future<void> _loadDataFast() async {
+  // Kategoriyalarni tezkor yuklash
+  Future<void> _loadCategoriesFast() async {
     try {
-      setState(() => _isLoading = true);
-
-      if (_isCacheValid()) {
-        _categories = _cachedCategories!;
-        _allProducts = _cachedProducts!;
-        setState(() => _isLoading = false);
+      // Cache dan kategoriyalarni olish
+      if (_isCacheValid() && _memoryCache!['categories'] != null) {
+        _categories = List<Category>.from(_memoryCache!['categories']);
+        setState(() {
+          _categoriesLoaded = true;
+        });
         return;
       }
 
-      String baseUrl = "${ApiConfig.baseUrl}";
+      // API dan kategoriyalarni olish
+      final url = Uri.parse("${ApiConfig.baseUrl}/categories/list");
 
-      Future<List<Ovqat>> fetchProducts() async {
-        final url = Uri.parse("$baseUrl/foods/list");
+      final response = await http
+          .get(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${_token ?? widget.token}',
+        },
+      )
+          .timeout(Duration(seconds: 2)); // Qisqa timeout
 
-        final response = await http.get(
-          url,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ${widget.token}',
-          },
-        );
+      if (response.statusCode == 200) {
+        final dynamic decoded = json.decode(response.body);
 
-        if (response.statusCode == 200) {
-          final dynamic decoded = json.decode(response.body);
-          print("🔍 Mahsulotlar decoded turi: ${decoded.runtimeType}");
-
-          if (decoded is Map<String, dynamic>) {
-            final data =
-                decoded['foods'] ??
-                    decoded['data'] ??
-                    decoded['products'] ??
-                    decoded;
-            if (data is List) {
-              return data.map((e) => Ovqat.fromJson(e)).toList();
-            } else {
-              throw Exception("API javobida mahsulotlar ro'yxati topilmadi");
-            }
-          } else if (decoded is List) {
-            return decoded.map((e) => Ovqat.fromJson(e)).toList();
-          } else {
-            throw Exception("API javobi noto'g'ri formatda");
+        List<Category> categories = [];
+        if (decoded is Map<String, dynamic>) {
+          final data = decoded['categories'] ?? decoded['data'] ?? decoded;
+          if (data is List) {
+            categories = data.map((e) => Category.fromJson(e)).toList();
           }
-        } else {
-          throw Exception(
-            "Mahsulotlar olishda xatolik: ${response.statusCode}",
-          );
+        } else if (decoded is List) {
+          categories = decoded.map((e) => Category.fromJson(e)).toList();
         }
-      }
 
-      Future<List<Category>> fetchCategories() async {
-        final url = Uri.parse("$baseUrl/categories/list");
+        // Cache ga saqlash
+        _memoryCache ??= {};
+        _memoryCache!['categories'] = categories;
+        _lastCacheTime = DateTime.now();
 
-        final response = await http.get(
-          url,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ${widget.token}',
-          },
-        );
-
-        if (response.statusCode == 200) {
-          final dynamic decoded = json.decode(response.body);
-          print("🔍 decoded turi: ${decoded.runtimeType}");
-
-          if (decoded is Map<String, dynamic>) {
-            final data = decoded['categories'] ?? decoded['data'] ?? decoded;
-            if (data is List) {
-              return data.map((e) => Category.fromJson(e)).toList();
-            } else {
-              throw Exception("API javobida kategoriyalar ro'yxati topilmadi");
-            }
-          } else if (decoded is List) {
-            return decoded.map((e) => Category.fromJson(e)).toList();
-          } else {
-            throw Exception("API javobi noto'g'ri formatda");
-          }
-        } else {
-          throw Exception("Kategoriya olishda xatolik: ${response.statusCode}");
+        if (mounted) {
+          setState(() {
+            _categories = categories;
+            _categoriesLoaded = true;
+          });
         }
-      }
-
-      final futures = await Future.wait([
-        fetchCategories().timeout(Duration(seconds: 3)),
-        fetchProducts().timeout(Duration(seconds: 3)),
-      ]).timeout(Duration(seconds: 5));
-
-      _cachedCategories = futures[0] as List<Category>;
-      _cachedProducts = futures[1] as List<Ovqat>;
-      _lastCacheTime = DateTime.now();
-
-      if (mounted) {
-        setState(() {
-          _categories = _cachedCategories!;
-          _allProducts = _cachedProducts!;
-          _isLoading = false;
-        });
       }
     } catch (e) {
+      debugPrint("Kategoriyalar yuklashda xatolik: $e");
+      if (mounted) {
+        setState(() => _categoriesLoaded = true);
+      }
+    }
+  }
+
+  // Mahsulotlarni background da yuklash
+  void _loadProductsInBackground() async {
+    try {
+      // Cache dan mahsulotlarni olish
+      if (_isCacheValid() && _memoryCache!['products'] != null) {
+        _allProducts = List<Ovqat>.from(_memoryCache!['products']);
+        setState(() {
+          _isLoading = false;
+        });
+        _filterProductsByCategory();
+        return;
+      }
+
+      // API dan mahsulotlarni olish
+      final url = Uri.parse("${ApiConfig.baseUrl}/foods/list");
+
+      final response = await http
+          .get(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${_token ?? widget.token}',
+        },
+      )
+          .timeout(Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final dynamic decoded = json.decode(response.body);
+
+        List<Ovqat> products = [];
+        if (decoded is Map<String, dynamic>) {
+          final data =
+              decoded['foods'] ??
+                  decoded['data'] ??
+                  decoded['products'] ??
+                  decoded;
+          if (data is List) {
+            products = data.map((e) => Ovqat.fromJson(e)).toList();
+          }
+        } else if (decoded is List) {
+          products = decoded.map((e) => Ovqat.fromJson(e)).toList();
+        }
+
+        // Cache ga saqlash
+        _memoryCache ??= {};
+        _memoryCache!['products'] = products;
+        _lastCacheTime = DateTime.now();
+
+        if (mounted) {
+          setState(() {
+            _allProducts = products;
+            _isLoading = false;
+          });
+          _filterProductsByCategory();
+        }
+      }
+    } catch (e) {
+      debugPrint("Mahsulotlar yuklashda xatolik: $e");
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -2029,93 +2337,67 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
   void _filterProductsByCategory() {
     List<Ovqat> filtered = _allProducts;
 
-    // Agar qidiruv so'rovi bo'sh bo'lsa
-    if (_searchQuery.isEmpty) {
-      if (_selectedCategoryId == null) {
-        // Hech narsa tanlanmagan - barcha mahsulotlar
-        setState(() {
-          _filteredProducts = _allProducts;
-        });
-        return;
-      } else {
-        // Faqat kategoriya tanlangan
-        filtered = _allProducts.where((product) {
-          if (product.categoryId != _selectedCategoryId) return false;
-
-          // Agar subkategoriya tanlangan bo'lsa
-          if (_selectedSubcategory != null && _selectedSubcategory!.isNotEmpty) {
-            return product.subcategory?.toLowerCase() == _selectedSubcategory!.toLowerCase();
-          }
-
-          return true;
-        }).toList();
-      }
-    } else {
-      // Qidiruv so'rovi mavjud
+    // Global qidiruv - qidiruv so'rovi bo'lsa
+    if (_searchQuery.isNotEmpty) {
       final query = _searchQuery.toLowerCase();
 
-      // 1️⃣ Avval kategoriya/subkategoriya avtomatik tanlash
-      if (_selectedCategoryId == null) {
-        Category? matchedCategory;
-        String? matchedSubcategory;
+      // Mahsulot nomi bo'yicha global qidiruv
+      filtered =
+          _allProducts.where((product) {
+            final productName = product.name.toLowerCase();
+            final productSub = product.subcategory?.toLowerCase() ?? '';
 
-        // Subkategoriya nomi bo'yicha qidirish
-        for (final category in _categories) {
-          for (final sub in category.subcategories) {
-            if (sub.toLowerCase().contains(query)) {
-              matchedCategory = category;
-              matchedSubcategory = sub;
-              break;
-            }
-          }
-          if (matchedCategory != null) break;
-        }
+            // Mahsulot nomi yoki subkategoriya nomi bilan mos kelishi
+            return productName.contains(query) || productSub.contains(query);
+          }).toList();
 
-        // Agar subkategoriya topilmasa, kategoriya nomi bo'yicha qidirish
-        if (matchedCategory == null) {
-          for (final category in _categories) {
-            if (category.title.toLowerCase().contains(query)) {
-              matchedCategory = category;
-              break;
-            }
-          }
-        }
+      // Agar qidiruv natijasida mahsulot topilsa, uning kategoriyasini avtomatik tanlash
+      if (filtered.isNotEmpty && _selectedCategoryId == null) {
+        final firstProduct = filtered.first;
+        final matchedCategory = _categories.firstWhere(
+              (cat) => cat.id == firstProduct.categoryId,
+          orElse:
+              () => Category(
+            id: '',
+            title: '',
+            subcategories: [],
+            printerName: '',
+            printerIp: '',
+          ),
+        );
 
-        // Topilgan kategoriyani tanlash
-        if (matchedCategory != null) {
+        if (matchedCategory.id.isNotEmpty) {
           _selectedCategoryId = matchedCategory.id;
           _selectedCategoryName = matchedCategory.title;
-          _selectedSubcategory = matchedSubcategory;
+
+          // Agar mahsulotda subkategoriya bo'lsa, uni ham tanlash
+          if (firstProduct.subcategory != null &&
+              firstProduct.subcategory!.isNotEmpty) {
+            _selectedSubcategory = firstProduct.subcategory;
+          }
         }
       }
+    }
+    // Qidiruv bo'sh bo'lsa, kategoriya tanlangan bo'lsa
+    else if (_selectedCategoryId != null) {
+      // Faqat kategoriya tanlangan - kategoriya bo'yicha filterlash
+      filtered =
+          _allProducts.where((product) {
+            if (product.categoryId != _selectedCategoryId) return false;
 
-      // 2️⃣ Kategoriya bo'yicha filterlash
-      if (_selectedCategoryId != null) {
-        filtered = filtered.where((product) {
-          return product.categoryId == _selectedCategoryId;
-        }).toList();
-      }
+            // Agar subkategoriya tanlangan bo'lsa
+            if (_selectedSubcategory != null &&
+                _selectedSubcategory!.isNotEmpty) {
+              return product.subcategory?.toLowerCase() ==
+                  _selectedSubcategory!.toLowerCase();
+            }
 
-      // 3️⃣ Subkategoriya bo'yicha filterlash
-      if (_selectedSubcategory != null && _selectedSubcategory!.isNotEmpty) {
-        filtered = filtered.where((product) {
-          final productSub = product.subcategory?.toLowerCase() ?? '';
-          final selectedSub = _selectedSubcategory!.toLowerCase();
-
-          // To'liq mos kelishi yoki qidiruv so'rovi bilan mos kelishi
-          return productSub == selectedSub ||
-              productSub.contains(query) ||
-              product.name.toLowerCase().contains(selectedSub);
-        }).toList();
-      }
-
-      // 4️⃣ Mahsulot nomi bo'yicha qo'shimcha filterlash
-      filtered = filtered.where((product) {
-        final productName = product.name.toLowerCase();
-        final productSub = product.subcategory?.toLowerCase() ?? '';
-
-        return productName.contains(query) || productSub.contains(query);
-      }).toList();
+            return true;
+          }).toList();
+    }
+    // Hech narsa tanlangmagan va qidiruv bo'sh - barcha mahsulotlar
+    else {
+      filtered = _allProducts;
     }
 
     // Natijani yangilash
@@ -2137,30 +2419,38 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     _filterProductsByCategory();
   }
 
-  void _updateCart(String productId, int change) {
-    setState(() {
-      final currentQty = _cart[productId] ?? 0;
-      final newQty = currentQty + change;
-
-      if (newQty <= 0) {
-        _cart.remove(productId);
-      } else {
-        _cart[productId] = newQty;
-      }
-    });
-  }
-
   double _calculateTotal() {
+    if (_cart.isEmpty) {
+      debugPrint('Xatolik: Savat (_cart) bo‘sh');
+      return 0.0;
+    }
+    if (_allProducts.isEmpty) {
+      debugPrint('Xatolik: Mahsulotlar ro‘yxati (_allProducts) bo‘sh');
+      return 0.0;
+    }
+
     double total = 0;
     for (final entry in _cart.entries) {
-      final product = _allProducts.cast<Ovqat?>().firstWhere(
-            (p) => p?.id == entry.key,
-        orElse: () => null,
-      );
+      final product = _findProductById(entry.key);
       if (product != null) {
-        total += product.price * entry.value;
+        if (product.unit == 'kg') {
+          final itemPrice = product.price * entry.value['quantity'];
+          total += itemPrice;
+          debugPrint(
+            'Kg Mahsulot: ${product.name}, Narx: ${product.price}, kg: ${entry.value['quantity']}, Jami: $itemPrice',
+          );
+        } else {
+          final itemPrice = product.price * entry.value['quantity'];
+          total += itemPrice;
+          debugPrint(
+            'Oddiy Mahsulot: ${product.name}, Narx: ${product.price}, Soni: ${entry.value['quantity']}, Jami: $itemPrice',
+          );
+        }
+      } else {
+        debugPrint('Xatolik: Mahsulot topilmadi, food_id: ${entry.key}');
       }
     }
+    debugPrint('Umumiy jami: $total');
     return total;
   }
 
@@ -2243,18 +2533,58 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
 
   Future<void> _sendOrderInBackground() async {
     try {
+      if (_cart.isEmpty) {
+        if (mounted) {
+          _showError('Savat bosh. Iltimos, mahsulot qo‘shing.');
+        }
+        return;
+      }
+
       if (_token == null) {
         _token = await AuthService.getToken();
         if (_token == null) {
           await AuthService.loginAndPrintToken();
           _token = await AuthService.getToken();
+          if (_token == null) {
+            if (mounted) {
+              _showError(
+                'Autentifikatsiya xatosi. Iltimos, qayta urinib ko‘ring.',
+              );
+            }
+            return;
+          }
         }
       }
 
       final orderItems =
       _cart.entries
-          .map((e) => {'food_id': e.key, 'quantity': e.value})
+          .map((e) {
+        final product = _findProductById(e.key);
+        if (product == null) {
+          debugPrint('Xatolik: Mahsulot topilmadi, food_id: ${e.key}');
+          return null;
+        }
+        final quantity =
+        product.unit == 'kg'
+            ? e.value['quantity'] // double sifatida yuborish
+            : (e.value['quantity'] as num).toInt();
+        if (quantity <= 0) {
+          debugPrint(
+            'Xatolik: Noto‘g‘ri miqdor: $quantity, mahsulot: ${product.name}',
+          );
+          return null;
+        }
+        return {'food_id': e.key, 'quantity': quantity};
+      })
+          .where((item) => item != null)
           .toList();
+
+      if (orderItems.isEmpty) {
+        if (mounted) {
+          _showError('Savatda yaroqli mahsulotlar yo‘q.');
+        }
+        return;
+      }
 
       final orderData = {
         'table_id': widget.tableId,
@@ -2262,6 +2592,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         'first_name': widget.user.firstName ?? 'Noma\'lum',
         'items': orderItems,
         'total_price': _calculateTotal(),
+        'kassir_workflow': true,
+        'table_number': widget.tableName ?? 'N/A',
       };
 
       debugPrint('Zakaz yuborilmoqda: $orderData');
@@ -2274,10 +2606,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         },
         body: jsonEncode(orderData),
       );
-      print('Server body: ${response.body}');
 
       Map<String, dynamic> responseData;
-
       try {
         responseData = jsonDecode(response.body);
       } catch (_) {
@@ -2287,23 +2617,121 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
             'order_number': DateTime.now().millisecondsSinceEpoch
                 .toString()
                 .substring(8),
+            'formatted_order_number':
+            "#${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}",
+            'id': UniqueKey().toString(),
           },
-          'printing': {
-            'results': [],
-          },
+          'printing': {'results': []},
         };
       }
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         print('Zakaz muvaffaqiyatli yaratildi');
+        if (mounted) {
+          _showSuccess('Zakaz muvaffaqiyatli yuborildi!');
+        }
       } else {
         print('Zakaz yaratishda xatolik: ${response.statusCode}');
+        if (mounted) {
+          _showError(
+            'Zakaz yuborishda xato yuz berdi: Server xatosi (${response.statusCode}). Iltimos, administrator bilan bog‘laning.',
+          );
+        }
+
+        /// ❗ Shunday bo‘lsa ham printerga chop qilish uchun fallback ishlatiladi
       }
 
       await _printOrderAsync(responseData);
     } catch (e) {
       print('Background order failed: $e');
+      if (mounted) {
+        _showError('Server bilan bog‘lanishda xato: $e');
+      }
     }
+  }
+
+  Future<void> _sendAddItemsInBackground() async {
+    try {
+      if (_cart.isEmpty) {
+        if (mounted) {
+          _showError('Savat bosh. Iltimos, mahsulot qo‘shing.');
+        }
+        return;
+      }
+      final orderItems =
+      _cart.entries
+          .map((e) {
+        final product = _findProductById(e.key);
+        if (product == null) {
+          debugPrint('Xatolik: Mahsulot topilmadi, food_id: ${e.key}');
+          return null;
+        }
+        final quantity =
+        product.unit == 'kg'
+            ? e.value['quantity'] // double sifatida yuborish
+            : (e.value['quantity'] as num).toInt();
+        if (quantity <= 0) {
+          debugPrint(
+            'Xatolik: Noto‘g‘ri miqdor: $quantity, mahsulot: ${product.name}',
+          );
+          return null;
+        }
+        return {'food_id': e.key, 'quantity': quantity};
+      })
+          .where((item) => item != null)
+          .toList();
+
+      if (orderItems.isEmpty) {
+        if (mounted) {
+          _showError('Savatda yaroqli mahsulotlar yo‘q.');
+        }
+        return;
+      }
+
+      final response = await http.post(
+        Uri.parse(
+          "${ApiConfig.baseUrl}/orders/${widget.existingOrderId}/add-items",
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${widget.token}',
+        },
+        body: jsonEncode({'items': orderItems}),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = jsonDecode(response.body);
+        print('Mahsulot muvaffaqiyatli qo‘shildi');
+        if (mounted) {
+          _showSuccess('Mahsulot muvaffaqiyatli qo‘shildi!');
+        }
+        await _printAddedItemsOptimized(responseData);
+      } else {
+        print('Mahsulot qo‘shishda xatolik: ${response.statusCode}');
+        print('API javobi: ${response.body}');
+        if (mounted) {
+          _showError(
+            'Mahsulot qo‘shishda xato yuz berdi: Server xatosi (${response.statusCode}). Iltimos, administrator bilan bog‘laning.',
+          );
+        }
+      }
+    } catch (e) {
+      print('Background add items error: $e');
+      if (mounted) {
+        _showError('Server bilan bog‘lanishda xato: $e');
+      }
+    }
+  }
+
+  // Muvaffaqiyat xabarini ko‘rsatish uchun yangi metod
+  void _showSuccess(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
+        duration: Duration(seconds: 3),
+      ),
+    );
   }
 
   Future<void> _printOrderAsync(Map<String, dynamic> responseData) async {
@@ -2317,7 +2745,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         if (product != null) {
           final category = _categories.firstWhere(
                 (cat) => cat.id == product.categoryId,
-            orElse: () => Category(
+            orElse:
+                () => Category(
               id: '',
               title: '',
               subcategories: [],
@@ -2337,7 +2766,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
 
             printerGroups[category.printerIp]!.add({
               'name': product.name,
-              'qty': entry.value,
+              'qty': entry.value['quantity'],
+              'kg': product.unit == 'kg' ? entry.value['kg'] : null,
               'category': category.title,
             });
           }
@@ -2363,7 +2793,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                   final product = _findProductById(e.key);
                   return {
                     'name': product?.name ?? 'Unknown',
-                    'qty': e.value,
+                    'qty': e.value['quantity'],
+                    'kg': product?.unit == 'kg' ? e.value['kg'] : null,
                     'category': 'Umumiy',
                   };
                 }).toList();
@@ -2530,7 +2961,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     );
   }
 
-  Widget _buildAppBar(bool isDesktop)   {
+  Widget _buildAppBar(bool isDesktop) {
     return Container(
       padding: EdgeInsets.symmetric(
         vertical: isDesktop ? 10 : 8,
@@ -2689,7 +3120,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
             ),
           ),
           Expanded(
-            child: _isLoading
+            child:
+            _isLoading
                 ? const Center(
               child: CircularProgressIndicator(
                 color: AppColors.primary,
@@ -2706,7 +3138,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                     side: BorderSide(
-                      color: _selectedCategoryId == category.id
+                      color:
+                      _selectedCategoryId == category.id
                           ? AppColors.primary
                           : AppColors.lightGrey,
                       width: _selectedCategoryId == category.id ? 2 : 1,
@@ -2727,7 +3160,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
-                    onTap: () => _selectCategory(
+                    onTap:
+                        () => _selectCategory(
                       category.id,
                       category.title,
                     ),
@@ -2823,7 +3257,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: _isLoading
+              child:
+              _isLoading
                   ? const Center(
                 child: CircularProgressIndicator(
                   color: AppColors.primary,
@@ -2838,23 +3273,547 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                   style: const TextStyle(color: AppColors.grey),
                 ),
               )
-                  : GridView.builder(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: isDesktop ? 5 : (isTablet ? 4 : 3),
-                  childAspectRatio: 1.5,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                itemCount: _filteredProducts.length,
-                itemBuilder: (context, index) {
-                  final product = _filteredProducts[index];
-                  return _buildProductCard(product, isDesktop);
+                  : LayoutBuilder(
+                builder: (context, constraints) {
+                  // Ekran kengligiga qarab ustun sonini belgilash
+                  int crossAxisCount;
+                  if (isDesktop) {
+                    crossAxisCount = 5; // Desktop eski holatda qolsin
+                  } else if (constraints.maxWidth >= 900) {
+                    crossAxisCount = 4; // O'rta ekranlar uchun
+                  } else if (constraints.maxWidth >= 600) {
+                    crossAxisCount = 3; // Tablet uchun
+                  } else if (constraints.maxWidth >= 400) {
+                    crossAxisCount = 2; // Kichik ekranlar uchun
+                  } else {
+                    crossAxisCount = 2; // Eng kichik ekranlar
+                  }
+
+                  return GridView.builder(
+                    gridDelegate:
+                    SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossAxisCount,
+                      childAspectRatio:
+                      isDesktop
+                          ? 1.5
+                          : 0.9, // Desktop eski nisbat
+                      crossAxisSpacing: isDesktop ? 8 : 6,
+                      mainAxisSpacing: isDesktop ? 8 : 6,
+                    ),
+                    itemCount: _filteredProducts.length,
+                    itemBuilder: (context, index) {
+                      final product = _filteredProducts[index];
+                      return _buildProductCard(product, isDesktop);
+                    },
+                  );
                 },
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildProductCard(Ovqat product, bool isDesktop) {
+    final cartEntry = _cart[product.id];
+    final int quantityInCart = cartEntry?['quantity']?.toInt() ?? 0;
+    final double kgInCart =
+    product.unit == 'kg'
+        ? (cartEntry?['quantity']?.toDouble() ?? 1.0)
+        : 1.0;
+    final double totalPrice =
+    product.unit == 'kg'
+        ? product.price * kgInCart
+        : product.price * quantityInCart;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Desktop uchun eski holatni saqlab qolish
+        if (isDesktop) {
+          double maxCardWidth = 220;
+          return GestureDetector(
+            onTap: () {
+              if (product.unit == 'kg') {
+                _showKgInputModal(context, product);
+              } else {
+                _updateCart(product.id, 1);
+              }
+            },
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: maxCardWidth,
+                maxHeight: 180,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFF144D37),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color:
+                  quantityInCart > 0 || kgInCart > 0
+                      ? Colors.white
+                      : Colors.grey[400]!,
+                  width: quantityInCart > 0 || kgInCart > 0 ? 2 : 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    offset: const Offset(0, 4),
+                    blurRadius: 6,
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.1),
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(8),
+                        topRight: Radius.circular(8),
+                      ),
+                    ),
+                    child: Text(
+                      product.unit == 'kg'
+                          ? '${_currencyFormatter.format(product.price)} so\'m/kg'
+                          : '${_currencyFormatter.format(product.price)} ${product.unit} so\'m',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 8,
+                      ),
+                      child: AutoSizeText(
+                        product.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                        maxLines: 3,
+                        minFontSize: 8,
+                        maxFontSize: 15,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (product.unit == 'kg' && kgInCart > 0) ...[
+                        GestureDetector(
+                          onTap: () => _updateCart(product.id, -1),
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(
+                              Icons.remove,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () {
+                            if (product.unit == 'kg') {
+                              _showKgInputModal(context, product);
+                            } else {
+                              _updateCart(product.id, 1);
+                            }
+                          },
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(
+                              Icons.add,
+                              size: 18,
+                              color: const Color(0xFF144D37),
+                            ),
+                          ),
+                        ),
+                      ] else if (product.unit != 'kg' &&
+                          quantityInCart > 0) ...[
+                        GestureDetector(
+                          onTap: () => _updateCart(product.id, -1),
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(
+                              Icons.remove,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            '$quantityInCart',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () {
+                            if (product.unit == 'kg') {
+                              _showKgInputModal(context, product);
+                            } else {
+                              _updateCart(product.id, 1);
+                            }
+                          },
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(
+                              Icons.add,
+                              size: 18,
+                              color: const Color(0xFF144D37),
+                            ),
+                          ),
+                        ),
+                      ] else ...[
+                        GestureDetector(
+                          onTap: () {
+                            if (product.unit == 'kg') {
+                              _showKgInputModal(context, product);
+                            } else {
+                              _updateCart(product.id, 1);
+                            }
+                          },
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(
+                              Icons.add,
+                              size: 18,
+                              color: const Color(0xFF144D37),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  if ((product.unit == 'kg' && kgInCart > 0) ||
+                      (product.unit != 'kg' && quantityInCart > 0))
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 6,
+                      ),
+                      margin: const EdgeInsets.only(top: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(8),
+                          bottomRight: Radius.circular(8),
+                        ),
+                      ),
+                      child: Text(
+                        'Jami: ${_currencyFormatter.format(totalPrice)} so\'m',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // Mobile va tablet uchun yangi responsive dizayn
+        double cardWidth = constraints.maxWidth;
+        double fontSize = cardWidth > 150 ? 12.0 : 10.0;
+        double iconSize = cardWidth > 150 ? 18.0 : 16.0;
+        double buttonSize = cardWidth > 150 ? 26.0 : 24.0;
+
+        return GestureDetector(
+          onTap: () {
+            if (product.unit == 'kg') {
+              _showKgInputModal(context, product);
+            } else {
+              _updateCart(product.id, 1);
+            }
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF144D37),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color:
+                quantityInCart > 0 || kgInCart > 0
+                    ? Colors.white
+                    : Colors.grey[400]!,
+                width: quantityInCart > 0 || kgInCart > 0 ? 2 : 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.15),
+                  offset: const Offset(0, 4),
+                  blurRadius: 6,
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Narx qismi
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 4,
+                    horizontal: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    product.unit == 'kg'
+                        ? '${_currencyFormatter.format(product.price)} so\'m/kg'
+                        : '${_currencyFormatter.format(product.price)} so\'m',
+                    style: TextStyle(
+                      fontSize: fontSize * 0.8,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+
+                // Mahsulot nomi
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 4,
+                    horizontal: 2,
+                  ),
+                  child: Text(
+                    product.name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      fontSize: fontSize,
+                    ),
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+
+                // Tugmalar qismi - Overflow xatoligini hal qilish
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (product.unit == 'kg' && kgInCart > 0) ...[
+                        GestureDetector(
+                          onTap: () => _updateCart(product.id, -1),
+                          child: Container(
+                            width: buttonSize,
+                            height: buttonSize,
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(
+                                buttonSize / 2,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.remove,
+                              size: iconSize * 0.8,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: cardWidth > 150 ? 6 : 4),
+                        Flexible(
+                          child: Text(
+                            '${kgInCart.toStringAsFixed(1)} kg',
+                            style: TextStyle(
+                              fontSize: fontSize * 0.9,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        SizedBox(width: cardWidth > 150 ? 6 : 4),
+                        GestureDetector(
+                          onTap: () => _showKgInputModal(context, product),
+                          child: Container(
+                            width: buttonSize,
+                            height: buttonSize,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(
+                                buttonSize / 2,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.add,
+                              size: iconSize * 0.8,
+                              color: const Color(0xFF144D37),
+                            ),
+                          ),
+                        ),
+                      ] else if (product.unit != 'kg' &&
+                          quantityInCart > 0) ...[
+                        GestureDetector(
+                          onTap: () => _updateCart(product.id, -1),
+                          child: Container(
+                            width: buttonSize,
+                            height: buttonSize,
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(
+                                buttonSize / 2,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.remove,
+                              size: iconSize * 0.8,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: cardWidth > 150 ? 6 : 4),
+                        Flexible(
+                          child: Text(
+                            '$quantityInCart',
+                            style: TextStyle(
+                              fontSize: fontSize,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        SizedBox(width: cardWidth > 150 ? 6 : 4),
+                        GestureDetector(
+                          onTap: () => _updateCart(product.id, 1),
+                          child: Container(
+                            width: buttonSize,
+                            height: buttonSize,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(
+                                buttonSize / 2,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.add,
+                              size: iconSize * 0.8,
+                              color: const Color(0xFF144D37),
+                            ),
+                          ),
+                        ),
+                      ] else ...[
+                        GestureDetector(
+                          onTap: () {
+                            if (product.unit == 'kg') {
+                              _showKgInputModal(context, product);
+                            } else {
+                              _updateCart(product.id, 1);
+                            }
+                          },
+                          child: Container(
+                            width: buttonSize,
+                            height: buttonSize,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(
+                                buttonSize / 2,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.add,
+                              size: iconSize,
+                              color: const Color(0xFF144D37),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                // Jami narx
+                if ((product.unit == 'kg' && kgInCart > 0) ||
+                    (product.unit != 'kg' && quantityInCart > 0))
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 3,
+                      horizontal: 2,
+                    ),
+                    margin: const EdgeInsets.only(top: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Jami: ${_currencyFormatter.format(totalPrice)} so\'m',
+                      style: TextStyle(
+                        fontSize: fontSize * 0.8,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -2879,163 +3838,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
           color: isActive ? AppColors.primary : AppColors.lightGrey,
         ),
       ),
-    );
-  }
-
-  Widget _buildProductCard(Ovqat product, bool isDesktop) {
-    final int quantityInCart = _cart[product.id] ?? 0;
-    final double totalPrice = product.price * quantityInCart;
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        double maxCardWidth = isDesktop ? 220 : constraints.maxWidth * 0.5;
-
-        return GestureDetector(
-          onTap: () => _updateCart(product.id, 1),
-          child: Container(
-            constraints: BoxConstraints(
-              maxWidth: maxCardWidth,
-              maxHeight: 180,
-            ),
-            decoration: BoxDecoration(
-              color: const Color(0xFF144D37),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: quantityInCart > 0 ? Colors.white : Colors.grey[400]!,
-                width: quantityInCart > 0 ? 2 : 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.15),
-                  offset: const Offset(0, 4),
-                  blurRadius: 6,
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(8),
-                      topRight: Radius.circular(8),
-                    ),
-                  ),
-                  child: Text(
-                    '${_currencyFormatter.format(product.price)} so\'m',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Flexible(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 8,
-                    ),
-                    child: AutoSizeText(
-                      product.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                      maxLines: 3,
-                      minFontSize: 8,
-                      maxFontSize: 15,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (quantityInCart > 0) ...[
-                      GestureDetector(
-                        onTap: () => _updateCart(product.id, -1),
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: Colors.redAccent,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: const Icon(
-                            Icons.remove,
-                            size: 18,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '$quantityInCart',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    GestureDetector(
-                      onTap: () => _updateCart(product.id, 1),
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Icon(
-                          Icons.add,
-                          size: 18,
-                          color: const Color(0xFF144D37),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (quantityInCart > 0)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 6,
-                    ),
-                    margin: const EdgeInsets.only(top: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      borderRadius: const BorderRadius.only(
-                        bottomLeft: Radius.circular(8),
-                        bottomRight: Radius.circular(8),
-                      ),
-                    ),
-                    child: Text(
-                      'Jami: ${_currencyFormatter.format(totalPrice)} so\'m',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 
@@ -3091,7 +3893,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                   : (widget.isAddingToExistingOrder
                   ? _addItemsToExistingOrder
                   : _createOrderUltraFast),
-              icon: _isSubmitting
+              icon:
+              _isSubmitting
                   ? const SizedBox(
                 width: 18,
                 height: 18,
@@ -3142,6 +3945,277 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     );
   }
 
+  void _showKgInputModal(BuildContext context, Ovqat product) {
+    double kg = _cart[product.id]?['quantity']?.toDouble() ?? 1.0;
+    double price = product.price * kg;
+    TextEditingController kgController = TextEditingController(
+      text: kg.toStringAsFixed(2).replaceAll(RegExp(r'\.00$'), ''),
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: AppColors.primary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              contentPadding: const EdgeInsets.all(6), // Yanada kichik padding
+              titlePadding: const EdgeInsets.only(top: 6, left: 6, right: 6),
+              title: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6), // Kichikroq
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.scale,
+                          color: Colors.white,
+                          size: 14,
+                        ), // Kichik ikonka
+                        const SizedBox(width: 4),
+                        const Text(
+                          'AFITSANT',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12, // Kichik font
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    product.name,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.white,
+                    ), // Kichik font
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    'Narxi: ${_currencyFormatter.format(product.price)} so\'m/kg',
+                    style: const TextStyle(
+                      fontSize: 14, // Kichik font
+                      color: AppColors.white,
+                    ),
+                  ),
+                ],
+              ),
+              content: Container(
+                width: 220, // Yanada kichik kenglik
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ), // Kichik
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: Text(
+                        kgController.text.isEmpty
+                            ? '0 kg'
+                            : '${kgController.text} kg',
+                        style: const TextStyle(
+                          fontSize: 14, // Kichik font
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    GridView.count(
+                      shrinkWrap: true,
+                      crossAxisCount: 3,
+                      childAspectRatio: 1.4, // Kichikroq tugmalar
+                      crossAxisSpacing: 3,
+                      mainAxisSpacing: 3,
+                      children: [
+                        for (int i = 1; i <= 9; i++)
+                          _buildNumberButton(i.toString(), () {
+                            setState(() {
+                              kgController.text += i.toString();
+                              kg = double.tryParse(kgController.text) ?? 0.0;
+                              price = product.price * kg;
+                            });
+                          }),
+                        _buildNumberButton('0', () {
+                          setState(() {
+                            kgController.text += '0';
+                            kg = double.tryParse(kgController.text) ?? 0.0;
+                            price = product.price * kg;
+                          });
+                        }),
+                        _buildNumberButton('.', () {
+                          setState(() {
+                            if (!kgController.text.contains('.')) {
+                              kgController.text += '.';
+                            }
+                          });
+                        }),
+                        _buildNumberButton('←', () {
+                          // Backspace
+                          setState(() {
+                            if (kgController.text.isNotEmpty) {
+                              kgController.text = kgController.text.substring(
+                                0,
+                                kgController.text.length - 1,
+                              );
+                              kg = double.tryParse(kgController.text) ?? 0.0;
+                              price = product.price * kg;
+                            }
+                          });
+                        }, isSpecial: true),
+                        _buildNumberButton('C', () {
+                          // Clear
+                          setState(() {
+                            kgController.text = '';
+                            kg = 0.0;
+                            price = 0.0;
+                          });
+                        }, isSpecial: true),
+                      ],
+                    ),
+
+                    const SizedBox(height: 6),
+                    // Tan narxi va yangi narxi
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Yangi narxi: ${_currencyFormatter.format(price)} so\'m',
+                          style: const TextStyle(
+                            fontSize: 11, // Kichik font
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 6,
+                            ), // Kichik
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            side: BorderSide(color: Colors.grey[400]!),
+                          ),
+                          child: const Text(
+                            'Qaytish',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey,
+                            ), // Kichik font
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed:
+                          kg > 0
+                              ? () {
+                            _updateCart(product.id, 1, kg: kg);
+                            Navigator.of(context).pop();
+                          }
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 6,
+                            ), // Kichik
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              side: BorderSide(color: Colors.grey[400]!),
+                            ),
+                          ),
+                          child: const Text(
+                            'Saqlash',
+                            style: TextStyle(
+                              fontSize: 10, // Kichik font
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Tugma funksiyasi (eski _buildNumberButton ni almashtiring)
+  Widget _buildNumberButton(
+      String text,
+      VoidCallback onTap, {
+        bool isSelected = false,
+        bool isSpecial = false,
+      }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : Colors.white,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : Colors.grey[300]!,
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              offset: const Offset(0, 2),
+              blurRadius: 3,
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: isSpecial ? 12 : 14, // Kichikroq font
+              fontWeight: FontWeight.bold,
+              color: isSelected ? Colors.white : Colors.black87,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _addItemsToExistingOrder() async {
     if (_isSubmitting || _cart.isEmpty) return;
 
@@ -3174,33 +4248,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     }
   }
 
-  Future<void> _sendAddItemsInBackground() async {
-    try {
-      final orderItems =
-      _cart.entries
-          .map((e) => {'food_id': e.key, 'quantity': e.value})
-          .toList();
-
-      final response = await http.post(
-        Uri.parse(
-          "${ApiConfig.baseUrl}/orders/${widget.existingOrderId}/add-items",
-        ),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${widget.token}',
-        },
-        body: jsonEncode({'items': orderItems}),
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final responseData = jsonDecode(response.body);
-        await _printAddedItemsOptimized(responseData);
-      }
-    } catch (e) {
-      print('Background add items error: $e');
-    }
-  }
-
   Future<void> _printAddedItemsOptimized(
       Map<String, dynamic> responseData,
       ) async {
@@ -3214,7 +4261,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         if (product != null) {
           final category = _categories.firstWhere(
                 (cat) => cat.id == product.categoryId,
-            orElse: () => Category(
+            orElse:
+                () => Category(
               id: '',
               title: '',
               subcategories: [],
@@ -3230,7 +4278,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
 
             printerGroups[category.printerIp]!.add({
               'name': product.name,
-              'qty': entry.value,
+              'qty': entry.value['quantity'],
+              'kg': product.unit == 'kg' ? entry.value['kg'] : null,
               'category': category.title,
             });
           }
@@ -3286,7 +4335,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     for (final item in data['items']) {
       final name = item['name'].toString();
       final qty = item['qty'].toString();
-      final line = '$name $qty';
+      final kg = item['kg']?.toString() ?? '-';
+      final line = '$name $qty ($kg kg)';
 
       final lineBytes = _encodeText(line);
       final padding = (printerWidth - lineBytes.length) ~/ 2;
@@ -3294,17 +4344,20 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         bytes.addAll(_encodeText(' ' * padding + line + '\r\n'));
       } else {
         final nameBytes = _encodeText(name);
-        final qtyBytes = _encodeText(qty);
-        final maxNameBytes = printerWidth - qtyBytes.length - 1;
+        final qtyKgBytes = _encodeText('$qty ($kg kg)');
+        final maxNameBytes = printerWidth - qtyKgBytes.length - 1;
 
         if (nameBytes.length <= maxNameBytes) {
           bytes.addAll(
-            _encodeText(name.padRight(maxNameBytes) + ' ' + qty + '\r\n'),
+            _encodeText(
+              name.padRight(maxNameBytes) + ' ' + '$qty ($kg kg)' + '\r\n',
+            ),
           );
         } else {
           int start = 0;
           while (start < nameBytes.length) {
-            final end = (start + printerWidth > nameBytes.length)
+            final end =
+            (start + printerWidth > nameBytes.length)
                 ? nameBytes.length
                 : start + printerWidth;
             final chunk = nameBytes.sublist(start, end);
@@ -3316,11 +4369,13 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
             bytes.addAll(_encodeText('\r\n'));
             start = end;
           }
-          final qtyPadding = (printerWidth - qtyBytes.length) ~/ 2;
+          final qtyPadding = (printerWidth - qtyKgBytes.length) ~/ 2;
           if (qtyPadding > 0) {
-            bytes.addAll(_encodeText(' ' * qtyPadding + qty + '\r\n'));
+            bytes.addAll(
+              _encodeText(' ' * qtyPadding + '$qty ($kg kg)' + '\r\n'),
+            );
           } else {
-            bytes.addAll(_encodeText(qty + '\r\n'));
+            bytes.addAll(_encodeText('$qty ($kg kg)' + '\r\n'));
           }
         }
       }
@@ -3331,11 +4386,5 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     bytes.addAll([0x1D, 0x56, 0]); // Cut
 
     return bytes;
-  }
-
-  static void clearCache() {
-    _cachedCategories = null;
-    _cachedProducts = null;
-    _lastCacheTime = null;
   }
 }

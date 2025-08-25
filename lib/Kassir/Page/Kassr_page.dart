@@ -1,16 +1,412 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' as ui;
+import 'dart:ffi';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart' show rootBundle; // Faqat rootBundle import qilish
+import 'package:ffi/ffi.dart';
+import 'package:image/image.dart' as img;
+import 'package:win32/win32.dart';
 import 'package:sora/Global/Api_global.dart';
 import 'package:top_snackbar_flutter/top_snack_bar.dart';
 import '../../Offisant/Page/Users_page.dart';
 import '../Model/KassirModel.dart';
+import 'dart:ffi' hide Size; // Size ni dart:ffi dan yashirish
+
+class UsbPrinterService {
+  Future<List<String>> getConnectedPrinters() async {
+    try {
+      final flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS;
+      final pcbNeeded = calloc<DWORD>();
+      final pcReturned = calloc<DWORD>();
+
+      EnumPrinters(
+          flags,
+          nullptr,
+          2,
+          nullptr,
+          0,
+          pcbNeeded,
+          pcReturned);
+
+      final cbBuf = pcbNeeded.value;
+      if (cbBuf == 0) {
+        print("❌ Printerlar topilmadi");
+        calloc.free(pcbNeeded);
+        calloc.free(pcReturned);
+        return [];
+      }
+
+      final pPrinterEnum = calloc<BYTE>(cbBuf);
+
+      final result = EnumPrinters(
+        flags,
+        nullptr,
+        2,
+        pPrinterEnum,
+        cbBuf,
+        pcbNeeded,
+        pcReturned,
+      );
+
+      List<String> printerNames = [];
+      if (result != 0) {
+        final printerInfo = pPrinterEnum.cast<PRINTER_INFO_2>();
+        final count = pcReturned.value;
+        print("🖨️ ${count} ta printer topildi");
+
+        for (var i = 0; i < count; i++) {
+          final printerName = printerInfo.elementAt(i).ref.pPrinterName.toDartString();
+          final portName = printerInfo.elementAt(i).ref.pPortName.toDartString();
+
+          print("🖨️ Printer: $printerName, Port: $portName");
+
+          // USB va boshqa portlarni qabul qilish
+          if (portName.toUpperCase().contains('USB') ||
+              portName.toUpperCase().contains('COM') ||
+              portName.toUpperCase().contains('LPT') ||
+              printerName.toLowerCase().contains('thermal') ||
+              printerName.toLowerCase().contains('pos') ||
+              printerName.toLowerCase().contains('receipt')) {
+            printerNames.add(printerName);
+            print("✅ Printer qo'shildi: $printerName");
+          }
+        }
+      }
+
+      calloc.free(pcbNeeded);
+      calloc.free(pcReturned);
+      calloc.free(pPrinterEnum);
+
+      print("🖨️ Umumiy mos printerlar: ${printerNames.length}");
+      return printerNames;
+    } catch (e) {
+      print("❌ Printerlarni olishda xatolik: $e");
+      return [];
+    }
+  }
+
+  Future<bool> printOrderReceipt(PendingOrder order) async {
+    print("🖨️ Chek chop etish boshlandi: ${order.formattedOrderNumber ?? order.orderNumber}");
+
+    try {
+      final printers = await getConnectedPrinters();
+      if (printers.isEmpty) {
+        print("❌ Hech qanday printer topilmadi");
+
+        // Fallback: Default printerlarni sinash
+        final defaultPrinters = [
+          'POS-58',
+          'POS-80',
+          'Generic / Text Only',
+          'Thermal Printer',
+        ];
+        for (String printerName in defaultPrinters) {
+          try {
+            final result = await _printToSpecificPrinter(order, printerName);
+            if (result) return true;
+          } catch (e) {
+            print("❌ $printerName bilan chop etishda xatolik: $e");
+            continue;
+          }
+        }
+        return false;
+      }
+
+      // Birinchi mavjud printer bilan sinash
+      for (String printerName in printers) {
+        try {
+          final result = await _printToSpecificPrinter(order, printerName);
+          if (result) return true;
+        } catch (e) {
+          print("❌ $printerName bilan chop etishda xatolik: $e");
+          continue;
+        }
+      }
+      return false;
+    } catch (e) {
+      print("❌ Umumiy xatolik: $e");
+      return false;
+    }
+  }
+
+  Future<bool> _printToSpecificPrinter(PendingOrder order, String printerName) async {
+    final hPrinter = calloc<HANDLE>();
+    final docInfo = calloc<DOC_INFO_1>();
+
+    docInfo.ref.pDocName = TEXT('Restaurant Order Receipt');
+    docInfo.ref.pOutputFile = nullptr;
+    docInfo.ref.pDatatype = TEXT('RAW');
+
+    try {
+      print("🖨️ Printer ochilayotgan: $printerName");
+      final openResult = OpenPrinter(TEXT(printerName), hPrinter, nullptr);
+      if (openResult == 0) {
+        final error = GetLastError();
+        print("❌ Printerni ochishda xatolik: $error");
+        return false;
+      }
+
+      print("📄 Print job boshlanayotgan...");
+      final jobId = StartDocPrinter(hPrinter.value, 1, docInfo.cast());
+      if (jobId == 0) {
+        final error = GetLastError();
+        print("❌ Print job xatolik: $error");
+        ClosePrinter(hPrinter.value);
+        return false;
+      }
+
+      final pageResult = StartPagePrinter(hPrinter.value);
+      if (pageResult == 0) {
+        final error = GetLastError();
+        print("❌ Sahifa boshlanishida xatolik: $error");
+      }
+
+      // Chek ma'lumotlarini tayyorlash
+      final escPosData = await _buildReceiptData(order);
+      print("📋 Chek ma'lumotlari tayyor: ${escPosData.length} bayt");
+
+      final bytesPointer = calloc<Uint8>(escPosData.length);
+      final bytesList = bytesPointer.asTypedList(escPosData.length);
+      bytesList.setAll(0, escPosData);
+
+      final bytesWritten = calloc<DWORD>();
+      final success = WritePrinter(
+        hPrinter.value,
+        bytesPointer,
+        escPosData.length,
+        bytesWritten,
+      );
+
+      print("📝 Yozildi: ${bytesWritten.value} / ${escPosData.length} bayt");
+
+      EndPagePrinter(hPrinter.value);
+      EndDocPrinter(hPrinter.value);
+      ClosePrinter(hPrinter.value);
+
+      calloc.free(bytesPointer);
+      calloc.free(bytesWritten);
+      calloc.free(hPrinter);
+      calloc.free(docInfo);
+
+      if (success == 0) {
+        final error = GetLastError();
+        print('❌ WritePrinter xatolik: $error');
+        return false;
+      } else {
+        print('✅ Chek muvaffaqiyatli chop etildi: $printerName');
+        return true;
+      }
+    } catch (e) {
+      print('❌ Chop etishda xatolik: $e');
+      try {
+        ClosePrinter(hPrinter.value);
+        calloc.free(hPrinter);
+        calloc.free(docInfo);
+      } catch (_) {}
+      return false;
+    }
+  }
+
+  Future<List<int>> loadLogoBytes() async {
+    try {
+      final byteData = await rootBundle.load('assets/rasm/sara.png');
+      final bytes = byteData.buffer.asUint8List();
+      final image = img.decodeImage(bytes)!;
+
+      // Logoni avvalgi o'lchamiga qaytardik (512 px)
+      final resized = img.copyResize(image, width: 512);
+      final width = resized.width;
+      final height = resized.height;
+      final alignedWidth = (width + 7) ~/ 8 * 8;
+
+      List<int> escPosLogo = [];
+      escPosLogo.addAll([0x1D, 0x76, 0x30, 0x00]);
+      escPosLogo.addAll([
+        (alignedWidth ~/ 8) & 0xFF,
+        ((alignedWidth ~/ 8) >> 8) & 0xFF,
+        height & 0xFF,
+        (height >> 8) & 0xFF,
+      ]);
+
+      for (int y = 0; y < height; y++) {
+        for (int x = 0; x < alignedWidth; x += 8) {
+          int byte = 0;
+          for (int bit = 0; bit < 8; bit++) {
+            int pixelX = x + bit;
+            if (pixelX < width) {
+              int pixel = resized.getPixel(pixelX, y);
+              int luminance = img.getLuminance(pixel);
+              if (luminance < 128) {
+                byte |= (1 << (7 - bit));
+              }
+            }
+          }
+          escPosLogo.add(byte);
+        }
+      }
+
+      print("🖼️ Logo yuklandi: ${width}x${height}");
+      return escPosLogo;
+    } catch (e) {
+      print('❌ Logo yuklashda xato: $e');
+      return [];
+    }
+  }
+
+  Future<List<int>> _buildReceiptData(PendingOrder order) async {
+    final logoBytes = await loadLogoBytes();
+
+    List<int> centeredLogo = [];
+    if (logoBytes.isNotEmpty) {
+      centeredLogo.addAll([0x1B, 0x61, 0x01]); // Markazga tekislash
+      centeredLogo.addAll(logoBytes);
+      centeredLogo.addAll([0x1B, 0x61, 0x00]); // Tekislashni tiklash
+    }
+
+    final now = DateTime.now();
+    final printDateTime = DateFormat('dd.MM.yyyy HH:mm').format(now);
+
+    return <int>[
+      0x1B, 0x40, // Printer init
+
+      // LOGO (512px, markazda)
+      ...centeredLogo,
+      // Logo va matn orasida bo'sh joy yo'q
+      ...centerText("Namangan shahri, Namangan tumani"),
+      ...centerText("Tel: +998 90 123 45 67"),
+      ...centerText("----------------------------------"),
+
+      // BUYURTMA CHEKI (katta va qalin shrift)
+      0x1B, 0x21, 0x20, // Katta shrift
+      0x1B, 0x45, 0x01, // Qalin shrift
+      ...centerText("BUYURTMA CHEKI"),
+      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
+      0x1B, 0x21, 0x00, // Oddiy shriftga qaytish
+      0x0A, // Bo'sh qator
+
+      // Sana va vaqt
+      ...centerText(printDateTime),
+      ...centerText("----------------------------------"),
+      0x1B, 0x45, 0x01, // Qalin shrift
+      ...leftAlignText("       Buyurtma: ${order.formattedOrderNumber ?? order.orderNumber}"),
+      ...leftAlignText("       Stol: ${order.tableName ?? 'N/A'}"),
+      ...leftAlignText("       Ofitsiant: ${order.waiterName ?? 'N/A'}"),
+      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
+      ...centerText("----------------------------------"),
+
+      // MAHSULOTLAR SARLAVHASI
+      0x1B, 0x21, 0x10, // O'rta shrift
+      0x1B, 0x45, 0x01, // Qalin shrift
+      ...centerText("MAHSULOTLAR"),
+      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
+      0x1B, 0x21, 0x00, // Oddiy shrift
+      ...centerText("----------------------------------"),
+
+      // Mahsulotlar ro'yxati (markazda)
+      ...buildItemsList(order.items),
+
+      ...centerText("----------------------------------"),
+
+      // Hisob-kitob (servicefee va subtotal bo'lmasa faqat totalPrice)
+      0x1B, 0x21, 0x00, // Oddiy shrift
+      // Qo'shimcha bo'shliq
+      0x0A, // Xizmat haqi va jami o'rtasida bo'shliq
+      0x0A, // Qo'shimcha bo'shliq
+
+      // Yakuniy summa (katta va qalin)
+      0x1B, 0x21, 0x20, // Katta shrift
+      0x1B, 0x45, 0x01, // Qalin shrift
+      ...centerText("JAMI: ${formatNumber(order.totalPrice)} so'm"),
+      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
+      0x1B, 0x21, 0x00, // Oddiy shrift
+      ...centerText("----------------------------------"),
+
+      // Rahmat xabari
+      0x1B, 0x21, 0x20, // Katta shrift
+      0x1B, 0x45, 0x01, // Qalin shrift
+      ...centerText("TASHRIFINGIZ UCHUN"),
+      ...centerText("RAHMAT!"),
+      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
+      0x1B, 0x21, 0x00, // Oddiy shrift
+      0x0A, // Bo'sh qator
+      0x0A, // Bo'sh qator
+
+      // Chekni kesish
+      0x1B, 0x64, 0x06, // 6 ta bo'sh qator
+      0x1D, 0x56, 0x00, // Kesish
+    ];
+  }
+
+  List<int> buildItemsList(List<dynamic> items) {
+    List<int> result = [];
+    int itemNum = 1;
+
+    for (var item in items) {
+      // Har bir mahsulot uchun
+      final namePart = '$itemNum. ${item['name'] ?? 'N/A'}';
+      final quantity = item['quantity'] ?? 0;
+      final price = item['price']?.toDouble() ?? 0.0;
+      final total = quantity * price;
+      final qtyTotal = '${quantity}x  ${formatNumber(total)}';
+
+      // Markazlash uchun umumiy uzunlikni hisoblash
+      const int lineLength = 32; // Chek kengligi 32 belgiga moslashtirildi
+      String line = namePart;
+
+      // Bo'sh joylar sonini hisoblash
+      int spaceCount = lineLength - utf8.encode(namePart).length - utf8.encode(qtyTotal).length;
+      if (spaceCount < 1) spaceCount = 1;
+
+      line += ' ' * spaceCount + qtyTotal;
+
+      // Markazlash uchun
+      result.addAll(centerText(line));
+
+      // Har bir mahsulotdan keyin bo'shliq
+      result.add(0x0A);
+      itemNum++;
+    }
+    return result;
+  }
+
+  List<int> centerText(String text) {
+    List<int> result = [];
+    final lines = text.split('\n');
+    for (final line in lines) {
+      if (line.isNotEmpty) {
+        result.addAll([0x1B, 0x61, 0x01]); // Markazga tekislash
+        result.addAll(utf8.encode(line));
+        result.add(0x0A); // Yangi qator
+        result.addAll([0x1B, 0x61, 0x00]); // Tekislashni tiklash
+      }
+    }
+    return result;
+  }
+
+  List<int> leftAlignText(String text) {
+    List<int> result = [];
+    result.addAll([0x1B, 0x61, 0x00]); // Chapga tekislash
+    result.addAll(utf8.encode(text));
+    result.add(0x0A); // Yangi qator
+    return result;
+  }
+
+  String formatNumber(dynamic number) {
+    final numStr = number.toString().split('.');
+    return numStr[0].replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+          (Match m) => '${m[1]} ',
+    );
+  }
+}
 
 class FastUnifiedPendingPaymentsPage1 extends StatefulWidget {
-  final token;
+  final String token;
   const FastUnifiedPendingPaymentsPage1({super.key, required this.token});
 
   @override
@@ -30,6 +426,8 @@ class _FastUnifiedPendingPaymentsPageState
   List<PendingOrder> closedOrders = [];
   Timer? _refreshTimer;
   bool _disposed = false;
+  final UsbPrinterService _printerService =
+  UsbPrinterService(); // Bu qatorni qo'shing
 
   @override
   void initState() {
@@ -71,7 +469,6 @@ class _FastUnifiedPendingPaymentsPageState
     try {
       // Widget orqali uzatilgan token ishlatish
       final kassirToken = widget.token;
-
       // PARALLEL API CALLS - 2 ta API ni bir vaqtda
       final results = await Future.wait([
         http.get(
@@ -216,18 +613,23 @@ class _FastUnifiedPendingPaymentsPageState
         return {
           'success': true,
           'message':
-          data['message']?.toString() ?? 'To‘lov muvaffaqiyatli amalga oshirildi',
+          data['message']?.toString() ??
+              'To‘lov muvaffaqiyatli amalga oshirildi',
           'data': data,
         };
       }
 
       return {
         'success': false,
-        'message': data['message']?.toString() ?? 'To‘lovni amalga oshirishda xato',
+        'message':
+        data['message']?.toString() ?? 'To‘lovni amalga oshirishda xato',
       };
     } catch (e) {
       debugPrint('To‘lovni amalga oshirishda xato: $e');
-      return {'success': false, 'message': 'To‘lovni amalga oshirishda xato: $e'};
+      return {
+        'success': false,
+        'message': 'To‘lovni amalga oshirishda xato: $e',
+      };
     }
   }
 
@@ -363,14 +765,69 @@ class _FastUnifiedPendingPaymentsPageState
     setState(() => searchText = value);
   }
 
-  void _handlePrintReceipt() {
+  Future<void> _handlePrintReceipt() async {
     if (selectedOrder == null) {
       _showSnackBar('Avval zakazni tanlang!');
       return;
     }
-    debugPrint(
-      'Printing receipt for order ${selectedOrder!.formattedOrderNumber}',
-    );
+
+    // Yopilmagan zakazlar uchun chek chop etishni taqiqlash
+    if (selectedDateRange == 'open') {
+      _showSnackBar('Yopilmagan zakazlar uchun chek chop etish mumkin emas!');
+      return;
+    }
+
+    setState(() => isLoading = true);
+
+    try {
+      // USB orqali chop etish
+      final success = await _printerService.printOrderReceipt(selectedOrder!);
+
+      if (!_disposed) {
+        setState(() => isLoading = false);
+
+        if (success) {
+          showTopSnackBar(
+            Overlay.of(context),
+            Material(
+              color: Colors.transparent,
+              child: Center(
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.8,
+                    minWidth: 100,
+                  ),
+                  margin: const EdgeInsets.symmetric(horizontal: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8),
+                    ],
+                  ),
+                  child: const Text(
+                    "✅ Чек муваффақиятли чоп этилди!",
+                    style: TextStyle(color: Colors.white, fontSize: 14),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ),
+            animationDuration: const Duration(milliseconds: 50),
+            reverseAnimationDuration: const Duration(milliseconds: 50),
+          );
+        } else {
+          _showSnackBar('Чек чоп этишда хатолик юз берди. Принтер уланганлигини текширинг.');
+        }
+      }
+    } catch (e) {
+      if (!_disposed) {
+        setState(() => isLoading = false);
+        _showSnackBar('Принтерда хатолик: $e');
+      }
+      debugPrint('Print error: $e');
+    }
   }
 
   Future<void> _handleCloseOrder() async {
@@ -928,7 +1385,7 @@ class _FastUnifiedPendingPaymentsPageState
                   children: [
                     Expanded(
                       child: Text(
-                        '${item["name"] ?? "N/A"} - ${item["quantity"] ?? 0} dona',
+                        '${item["name"] ?? "N/A"} - ${item["quantity"] ?? 0}',
                         style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
                     ),
@@ -1252,7 +1709,7 @@ class _FastUnifiedPendingPaymentsPageState
                                     selectedOrder != null
                                         ? Colors.white
                                         : Colors.black,
-                                    minimumSize: const Size(120, 70),
+                                    minimumSize: const ui.Size(120, 70),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(10),
                                       side: const BorderSide(
@@ -1281,7 +1738,7 @@ class _FastUnifiedPendingPaymentsPageState
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF007bff),
                                     foregroundColor: Colors.white,
-                                    minimumSize: const Size(120, 70),
+                                    minimumSize: const ui.Size(120, 70),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(10),
                                       side: const BorderSide(
@@ -1352,7 +1809,7 @@ class _FastUnifiedPendingPaymentsPageState
     style: ElevatedButton.styleFrom(
       backgroundColor: const Color(0xFFf5f5f5),
       foregroundColor: Colors.black,
-      minimumSize: const Size(120, 70),
+      minimumSize: const ui.Size(120, 70),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
         side: const BorderSide(color: Color(0xFF999999), width: 2),
@@ -1541,355 +1998,482 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
     if (!widget.visible) return const SizedBox.shrink();
 
     return Center(
-      child: Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        insetPadding: const EdgeInsets.all(16),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: 500,
-            maxHeight: MediaQuery.of(context).size.height * 0.9, // 90% balandlik
-            minWidth: 280,
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4), // Orqa fonni hiralash
+        child: Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Header - fix qilingan
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: Colors.grey, width: 0.5)),
-                ),
-                child: Column(
-                  children: [
-                    const Text(
-                      "💰 TO'LOV QABUL QILISH",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Zakaz #${widget.selectedOrder.formattedOrderNumber ?? widget.selectedOrder.orderNumber}',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Scrollable content
-              Flexible(
-                child: SingleChildScrollView(
+          insetPadding: const EdgeInsets.all(16),
+          //backgroundColor: Colors.lightGreenAccent,
+          backgroundColor: Color(0xFFBAE0FF), // Oq-ko‘k yaqin
+          elevation: 8, // Soyani kuchaytiradi
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 500,
+              maxHeight: MediaQuery.of(context).size.height * 0.9,
+              minWidth: 280,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header - fix qilingan
+                Container(
                   padding: const EdgeInsets.all(16),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Zakaz summasi
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFf8f9fa),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Zakaz summasi:',
-                                style: TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                              Text(
-                                '${_currencyFormat.format(_orderTotal)} so\'m',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF28a745),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: Colors.grey, width: 0.5),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      const Text(
+                        "💰 TO'LOV QABUL QILISH",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Zakaz #${widget.selectedOrder.formattedOrderNumber ?? widget.selectedOrder.orderNumber}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Scrollable content
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Zakaz summasi
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFf8f9fa),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Zakaz summasi:',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
                                 ),
+                                Text(
+                                  '${_currencyFormat.format(_orderTotal)} so\'m',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF28a745),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          // To'lov usuli
+                          const Text(
+                            "To'lov usuli",
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6.0,
+                            runSpacing: 6.0,
+                            children: [
+                              ChoiceChip(
+                                label: const Text(
+                                  '💵 Naqd',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                selected: _paymentMethod == 'cash',
+                                onSelected:
+                                    (selected) =>
+                                    _handlePaymentMethodChange('cash'),
+                              ),
+                              ChoiceChip(
+                                label: const Text(
+                                  '💳 Karta',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                selected: _paymentMethod == 'card',
+                                onSelected:
+                                    (selected) =>
+                                    _handlePaymentMethodChange('card'),
+                              ),
+                              ChoiceChip(
+                                label: const Text(
+                                  '📱 Click',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                selected: _paymentMethod == 'click',
+                                onSelected:
+                                    (selected) =>
+                                    _handlePaymentMethodChange('click'),
+                              ),
+                              ChoiceChip(
+                                label: const Text(
+                                  '🔄 Aralash',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                selected: _paymentMethod == 'mixed',
+                                onSelected:
+                                    (selected) =>
+                                    _handlePaymentMethodChange('mixed'),
                               ),
                             ],
                           ),
-                        ),
 
-                        const SizedBox(height: 12),
+                          const SizedBox(height: 12),
 
-                        // To'lov usuli
-                        const Text(
-                          "To'lov usuli",
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 6.0,
-                          runSpacing: 6.0,
-                          children: [
-                            ChoiceChip(
-                              label: const Text('💵 Naqd', style: TextStyle(fontSize: 12)),
-                              selected: _paymentMethod == 'cash',
-                              onSelected: (selected) => _handlePaymentMethodChange('cash'),
-                            ),
-                            ChoiceChip(
-                              label: const Text('💳 Karta', style: TextStyle(fontSize: 12)),
-                              selected: _paymentMethod == 'card',
-                              onSelected: (selected) => _handlePaymentMethodChange('card'),
-                            ),
-                            ChoiceChip(
-                              label: const Text('📱 Click', style: TextStyle(fontSize: 12)),
-                              selected: _paymentMethod == 'click',
-                              onSelected: (selected) => _handlePaymentMethodChange('click'),
-                            ),
-                            ChoiceChip(
-                              label: const Text('🔄 Aralash', style: TextStyle(fontSize: 12)),
-                              selected: _paymentMethod == 'mixed',
-                              onSelected: (selected) => _handlePaymentMethodChange('mixed'),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        // To'lov summasi (oddiy usul)
-                        if (_paymentMethod != 'mixed')
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text("To'lov summasi"),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextFormField(
-                                      controller: _paymentAmountController,
-                                      keyboardType: TextInputType.number,
-                                      enabled: !['card', 'click'].contains(_paymentMethod),
-                                      decoration: const InputDecoration(
-                                        hintText: 'Summa',
-                                        border: OutlineInputBorder(),
-                                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                      ),
-                                      validator: (value) {
-                                        final amount = double.tryParse(value?.replaceAll(',', '') ?? '') ?? 0;
-                                        if (amount <= 0) {
-                                          return "To'lov summasi 0 dan katta bo'lishi kerak!";
-                                        }
-                                        if (_paymentMethod == 'cash' && amount < _orderTotal) {
-                                          return "Naqd to'lov summasi yetarli emas!";
-                                        }
-                                        return null;
-                                      },
-                                      onChanged: (value) {
-                                        final amount = double.tryParse(value.replaceAll(',', '') ?? '') ?? 0;
-                                        setState(() {
-                                          _paymentAmount = amount;
-                                          if (_paymentMethod == 'cash') {
-                                            _changeAmount = (amount - _orderTotal).clamp(0, double.infinity);
-                                          }
-                                        });
-                                      },
-                                    ),
-                                  ),
-                                  if (_paymentMethod == 'cash') ...[
-                                    const SizedBox(width: 12),
+                          // To'lov summasi (oddiy usul)
+                          if (_paymentMethod != 'mixed')
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text("To'lov summasi"),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
                                     Expanded(
                                       child: TextFormField(
-                                        enabled: false,
-                                        initialValue: _currencyFormat.format(_changeAmount),
+                                        controller: _paymentAmountController,
+                                        keyboardType: TextInputType.number,
+                                        enabled:
+                                        ![
+                                          'card',
+                                          'click',
+                                        ].contains(_paymentMethod),
                                         decoration: const InputDecoration(
-                                          labelText: 'Qaytim',
+                                          hintText: 'Summa',
                                           border: OutlineInputBorder(),
-                                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                          contentPadding: EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 8,
+                                          ),
                                         ),
+                                        validator: (value) {
+                                          final amount =
+                                              double.tryParse(
+                                                value?.replaceAll(',', '') ??
+                                                    '',
+                                              ) ??
+                                                  0;
+                                          if (amount <= 0) {
+                                            return "To'lov summasi 0 dan katta bo'lishi kerak!";
+                                          }
+                                          if (_paymentMethod == 'cash' &&
+                                              amount < _orderTotal) {
+                                            return "Naqd to'lov summasi yetarli emas!";
+                                          }
+                                          return null;
+                                        },
+                                        onChanged: (value) {
+                                          final amount =
+                                              double.tryParse(
+                                                value.replaceAll(',', '') ?? '',
+                                              ) ??
+                                                  0;
+                                          setState(() {
+                                            _paymentAmount = amount;
+                                            if (_paymentMethod == 'cash') {
+                                              _changeAmount = (amount -
+                                                  _orderTotal)
+                                                  .clamp(0, double.infinity);
+                                            }
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                    if (_paymentMethod == 'cash') ...[
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: TextFormField(
+                                          enabled: false,
+                                          initialValue: _currencyFormat.format(
+                                            _changeAmount,
+                                          ),
+                                          decoration: const InputDecoration(
+                                            labelText: 'Qaytim',
+                                            border: OutlineInputBorder(),
+                                            contentPadding:
+                                            EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 8,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+
+                                if ([
+                                  'card',
+                                  'click',
+                                ].contains(_paymentMethod)) ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFe6f7ff),
+                                      border: Border.all(
+                                        color: const Color(0xFF91d5ff),
+                                      ),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      _paymentMethod == 'card'
+                                          ? "💳 Karta to'lov - aniq summa"
+                                          : "📱 Click to'lov - aniq summa",
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF0050b3),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+
+                          // Aralash to'lov
+                          if (_paymentMethod == 'mixed') ...[
+                            const Text("Aralash to'lov"),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _cashAmountController,
+                                    keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Naqd',
+                                      border: OutlineInputBorder(),
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                    ),
+                                    validator: (value) {
+                                      final amount =
+                                          double.tryParse(
+                                            value?.replaceAll(',', '') ?? '',
+                                          ) ??
+                                              0;
+                                      if (amount <= 0)
+                                        return "Naqd summa 0'dan katta bo'lishi kerak!";
+                                      return null;
+                                    },
+                                    onChanged: (value) {
+                                      final amount =
+                                          double.tryParse(
+                                            value.replaceAll(',', '') ?? '',
+                                          ) ??
+                                              0;
+                                      setState(() {
+                                        _cashAmount = amount;
+                                        final total = amount + _cardAmount;
+                                        _changeAmount = (total - _orderTotal)
+                                            .clamp(0, double.infinity);
+                                      });
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _cardAmountController,
+                                    keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Karta',
+                                      border: OutlineInputBorder(),
+                                      contentPadding: EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
+                                      ),
+                                    ),
+                                    validator: (value) {
+                                      final amount =
+                                          double.tryParse(
+                                            value?.replaceAll(',', '') ?? '',
+                                          ) ??
+                                              0;
+                                      if (amount <= 0)
+                                        return "Karta summa 0'dan katta bo'lishi kerak!";
+                                      return null;
+                                    },
+                                    onChanged: (value) {
+                                      final amount =
+                                          double.tryParse(
+                                            value.replaceAll(',', '') ?? '',
+                                          ) ??
+                                              0;
+                                      setState(() {
+                                        _cardAmount = amount;
+                                        final total = _cashAmount + amount;
+                                        _changeAmount = (total - _orderTotal)
+                                            .clamp(0, double.infinity);
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+
+                          const SizedBox(height: 12),
+
+                          // Izohlar
+                          TextField(
+                            controller: _notesController,
+                            maxLines: 2,
+                            maxLength: 100,
+                            decoration: const InputDecoration(
+                              labelText: 'Izohlar',
+                              hintText: "To'lov haqida qo'shimcha ma'lumot...",
+                              border: OutlineInputBorder(),
+                              contentPadding: EdgeInsets.all(12),
+                            ),
+                          ),
+
+                          const SizedBox(height: 12),
+
+                          // Jami ma'lumot
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFf8f9fa),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Column(
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Jami to\'lov:',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${_currencyFormat.format(_paymentMethod == 'mixed' ? (_cashAmount + _cardAmount) : _paymentAmount)} so\'m',
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                   ],
-                                ],
-                              ),
-
-                              if (['card', 'click'].contains(_paymentMethod)) ...[
-                                const SizedBox(height: 8),
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFe6f7ff),
-                                    border: Border.all(color: const Color(0xFF91d5ff)),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    _paymentMethod == 'card' ? "💳 Karta to'lov - aniq summa" : "📱 Click to'lov - aniq summa",
-                                    style: const TextStyle(fontSize: 12, color: Color(0xFF0050b3)),
-                                  ),
                                 ),
-                              ],
-                            ],
-                          ),
-
-                        // Aralash to'lov
-                        if (_paymentMethod == 'mixed') ...[
-                          const Text("Aralash to'lov"),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _cashAmountController,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Naqd',
-                                    border: OutlineInputBorder(),
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  ),
-                                  validator: (value) {
-                                    final amount = double.tryParse(value?.replaceAll(',', '') ?? '') ?? 0;
-                                    if (amount <= 0) return "Naqd summa 0'dan katta bo'lishi kerak!";
-                                    return null;
-                                  },
-                                  onChanged: (value) {
-                                    final amount = double.tryParse(value.replaceAll(',', '') ?? '') ?? 0;
-                                    setState(() {
-                                      _cashAmount = amount;
-                                      final total = amount + _cardAmount;
-                                      _changeAmount = (total - _orderTotal).clamp(0, double.infinity);
-                                    });
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextFormField(
-                                  controller: _cardAmountController,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Karta',
-                                    border: OutlineInputBorder(),
-                                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                  ),
-                                  validator: (value) {
-                                    final amount = double.tryParse(value?.replaceAll(',', '') ?? '') ?? 0;
-                                    if (amount <= 0) return "Karta summa 0'dan katta bo'lishi kerak!";
-                                    return null;
-                                  },
-                                  onChanged: (value) {
-                                    final amount = double.tryParse(value.replaceAll(',', '') ?? '') ?? 0;
-                                    setState(() {
-                                      _cardAmount = amount;
-                                      final total = _cashAmount + amount;
-                                      _changeAmount = (total - _orderTotal).clamp(0, double.infinity);
-                                    });
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-
-                        const SizedBox(height: 12),
-
-                        // Izohlar
-                        TextField(
-                          controller: _notesController,
-                          maxLines: 2,
-                          maxLength: 100,
-                          decoration: const InputDecoration(
-                            labelText: 'Izohlar',
-                            hintText: "To'lov haqida qo'shimcha ma'lumot...",
-                            border: OutlineInputBorder(),
-                            contentPadding: EdgeInsets.all(12),
-                          ),
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        // Jami ma'lumot
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFf8f9fa),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Column(
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Jami to\'lov:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                  Text(
-                                    '${_currencyFormat.format(_paymentMethod == 'mixed' ? (_cashAmount + _cardAmount) : _paymentAmount)} so\'m',
-                                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Kerakli:', style: TextStyle(fontSize: 14)),
-                                  Text('${_currencyFormat.format(_orderTotal)} so\'m', style: const TextStyle(fontSize: 14)),
-                                ],
-                              ),
-                              if ((_paymentMethod == 'cash' || _paymentMethod == 'mixed') && _changeAmount > 0) ...[
                                 const SizedBox(height: 4),
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                  MainAxisAlignment.spaceBetween,
                                   children: [
-                                    const Text('Qaytim:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                                    Text('${_currencyFormat.format(_changeAmount)} so\'m', style: const TextStyle(fontSize: 14)),
+                                    const Text(
+                                      'Kerakli:',
+                                      style: TextStyle(fontSize: 14),
+                                    ),
+                                    Text(
+                                      '${_currencyFormat.format(_orderTotal)} so\'m',
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
                                   ],
                                 ),
+                                if ((_paymentMethod == 'cash' ||
+                                    _paymentMethod == 'mixed') &&
+                                    _changeAmount > 0) ...[
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        'Qaytim:',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${_currencyFormat.format(_changeAmount)} so\'m',
+                                        style: const TextStyle(fontSize: 14),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
 
-              // Footer - fix qilingan
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                  border: Border(top: BorderSide(color: Colors.grey, width: 0.5)),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          _resetForm();
-                          widget.onClose();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          backgroundColor: Colors.grey[200],
-                          foregroundColor: Colors.black,
-                        ),
-                        child: const Text("❌ Bekor qilish", style: TextStyle(fontSize: 14)),
-                      ),
+                // Footer - fix qilingan
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                      top: BorderSide(color: Colors.grey, width: 0.5),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: widget.isProcessing ? null : _handleSubmit,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          backgroundColor: const Color(0xFF28a745),
-                          foregroundColor: Colors.white,
-                        ),
-                        child: Text(
-                          widget.isProcessing ? "⏳ Ishlanmoqda..." : "✅ Qabul qilish",
-                          style: const TextStyle(fontSize: 14),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            _resetForm();
+                            widget.onClose();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            backgroundColor: Colors.grey[200],
+                            foregroundColor: Colors.black,
+                          ),
+                          child: const Text(
+                            "❌ Bekor qilish",
+                            style: TextStyle(fontSize: 14),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: widget.isProcessing ? null : _handleSubmit,
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            backgroundColor: const Color(0xFF28a745),
+                            foregroundColor: Colors.white,
+                          ),
+                          child: Text(
+                            widget.isProcessing
+                                ? "⏳ Ishlanmoqda..."
+                                : "✅ Qabul qilish",
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

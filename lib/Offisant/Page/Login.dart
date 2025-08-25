@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:get/get_core/src/get_main.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:jwt_decoder/jwt_decoder.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sora/Global/Api_global.dart';
 import 'dart:async';
 import '../../Admin/Page/Home_page.dart';
@@ -25,7 +28,6 @@ class _LoginScreenState extends State<LoginScreen> {
   late String _dateString;
   final TextEditingController _pinController = TextEditingController();
   bool _isLoading = false;
-  String? _errorMessage;
 
   @override
   void initState() {
@@ -38,7 +40,8 @@ class _LoginScreenState extends State<LoginScreen> {
     final now = DateTime.now();
     setState(() {
       _timeString = DateFormat('H : mm : ss').format(now);
-      _dateString = toBeginningOfSentenceCase(
+      _dateString =
+      toBeginningOfSentenceCase(
         DateFormat("EEEE, d MMMM y 'г.'", 'ru').format(now),
       )!;
     });
@@ -47,19 +50,122 @@ class _LoginScreenState extends State<LoginScreen> {
   void _onKeyPressed(String value) {
     if (value == 'delete') {
       if (_pinController.text.isNotEmpty) {
-        _pinController.text = _pinController.text.substring(0, _pinController.text.length - 1);
+        _pinController.text = _pinController.text.substring(
+          0,
+          _pinController.text.length - 1,
+        );
       }
     } else {
       _pinController.text += value;
     }
   }
 
+  static const String baseUrl = "${ApiConfig.baseUrl}";
+
+  String? _errorMessage;
+
+  // Tokenni SharedPreferences ga saqlash
+  Future<void> saveToken(String key, String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(key, token);
+  }
+
+  // Tokenni SharedPreferences dan olish
+  Future<String?> getTokenFromPrefs(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(key);
+  }
+
+  // Token yaroqliligini tekshirish
+  bool isTokenValid(String token) {
+    try {
+      return !JwtDecoder.isExpired(token);
+    } catch (e) {
+      debugPrint('Token tekshirishda xatolik: $e');
+      return false;
+    }
+  }
+
+// API dan token olish funksiyasi + PIN tekshirish
+  Future<String?> getTokenFromApi(
+      String userCode,
+      String pin,
+      String role,
+      ) async {
+    try {
+      final loginUrl = Uri.parse('$baseUrl/auth/login');
+      final res = await http.post(
+        loginUrl,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'user_code': userCode,
+          'password': pin, // PIN shu yerda yuboriladi
+          'role': role,
+        }),
+      );
+
+      debugPrint('API Response Status: ${res.statusCode}');
+      debugPrint('API Response Body: ${res.body}');
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+
+        if (data['token'] != null && data['token'].isNotEmpty) {
+          return data['token'];
+        } else {
+          setState(() {
+            _errorMessage = "❌ Noto'g'ri PIN kod.";
+          });
+          return null;
+        }
+      } else {
+        final errorData = jsonDecode(res.body);
+        setState(() {
+          _errorMessage = errorData['message'] ?? "PIN xato yoki foydalanuvchi topilmadi.";
+        });
+        return null;
+      }
+    } catch (e) {
+      debugPrint('Token olishda xatolik: $e');
+      setState(() {
+        _errorMessage = "Server bilan bog'lanishda xatolik";
+      });
+      return null;
+    }
+  }
+
+  // Tokenni olish: avval cache dan, yaroqli bo'lmasa API dan
+  Future<String?> fetchOrGetToken(
+      String userCode,
+      String pin,
+      String role,
+      ) async {
+    // Avval cache dan tekshiramiz
+    final tokenKey =
+        '${role}_token_${userCode}'; // user_code bilan birga saqlaymiz
+    final storedToken = await getTokenFromPrefs(tokenKey);
+
+    if (storedToken != null && isTokenValid(storedToken)) {
+      debugPrint('✅ Cache dan token topildi: $role');
+      return storedToken;
+    }
+
+    // Token yo'q yoki yaroqsiz — API dan yangi token olamiz
+    debugPrint('🔄 API dan yangi token olinmoqda: $role');
+    final newToken = await getTokenFromApi(userCode, pin, role);
+    if (newToken != null) {
+      await saveToken(tokenKey, newToken);
+      debugPrint('✅ Yangi token saqlandi: $role');
+    }
+    return newToken;
+  }
+
   Future<void> _login() async {
     final pin = _pinController.text.trim();
 
-    if (widget.user.userCode.isEmpty || pin.isEmpty) {
+    if (pin.isEmpty) {
       setState(() {
-        _errorMessage = "Iltimos, barcha maydonlarni to'ldiring.";
+        _errorMessage = "Iltimos, PIN kodni kiriting.";
       });
       return;
     }
@@ -70,15 +176,14 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final tokenController = Get.find<TokenController>();
-
-      // 1️⃣ Barcha role tokenlarini yangilash
-      await tokenController.refreshAllTokensIfExpired(widget.user.userCode, pin);
-
-      // 2️⃣ Hozirgi role tokenini olish
-      final token = tokenController.getToken(widget.user.role);
+      final token = await getTokenFromApi(
+        widget.user.userCode,
+        pin,
+        widget.user.role,
+      );
 
       if (token != null) {
+        // Login muvaffaqiyatli
         Widget targetPage;
         switch (widget.user.role) {
           case 'afitsant':
@@ -103,12 +208,12 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       } else {
         setState(() {
-          _errorMessage = "Login amalga oshmadi. PIN kodni tekshiring.";
+          _errorMessage = "❌ Noto'g'ri PIN kod. Qayta urinib ko'ring.";
         });
       }
     } catch (e) {
       setState(() {
-        _errorMessage = "Kutilmagan xatolik yuz berdi: $e";
+        _errorMessage = "Xatolik yuz berdi: $e";
       });
     } finally {
       setState(() {
@@ -117,6 +222,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // Xatolik xabarini ko'rsatish
   void _showError() {
     if (_errorMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -140,6 +246,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Xatolik xabarini ko'rsatish
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_errorMessage != null) {
         _showError();
@@ -149,6 +256,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: Stack(
         children: [
+          // Orqa fon
           Container(decoration: const BoxDecoration(color: Color(0xFFE0E0E0))),
           Center(
             child: SingleChildScrollView(
@@ -162,6 +270,8 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
+
+          // Loading overlay
           if (_isLoading)
             Container(
               color: Colors.black.withOpacity(0.3),
@@ -300,10 +410,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _buildNumpad() {
     final List<String> keys = [
-      '1', '2', '3',
-      '4', '5', '6',
-      '7', '8', '9',
-      'Стереть', '0', 'delete',
+      '1',
+      '2',
+      '3',
+      '4',
+      '5',
+      '6',
+      '7',
+      '8',
+      '9',
+      'Стереть',
+      '0',
+      'delete',
     ];
 
     return GridView.builder(
@@ -339,7 +457,10 @@ class _LoginScreenState extends State<LoginScreen> {
     bool isClearButton = key == 'Стереть';
 
     return ElevatedButton(
-      onPressed: _isLoading ? null : () {
+      onPressed:
+      _isLoading
+          ? null
+          : () {
         if (isClearButton) {
           _pinController.clear();
         } else {
@@ -347,7 +468,8 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       },
       style: ElevatedButton.styleFrom(
-        backgroundColor: isClearButton ? const Color(0xFFD6DADE) : const Color(0xFFF7F8FA),
+        backgroundColor:
+        isClearButton ? const Color(0xFFD6DADE) : const Color(0xFFF7F8FA),
         foregroundColor: Colors.black,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
@@ -361,7 +483,10 @@ class _LoginScreenState extends State<LoginScreen> {
       children: [
         Expanded(
           child: OutlinedButton(
-            onPressed: _isLoading ? null : () {
+            onPressed:
+            _isLoading
+                ? null
+                : () {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => UserListPage()),
@@ -392,7 +517,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            child: _isLoading
+            child:
+            _isLoading
                 ? const SizedBox(
               width: 20,
               height: 20,

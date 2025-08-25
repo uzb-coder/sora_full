@@ -14,7 +14,6 @@ import 'package:win32/win32.dart';
 
 import '../../Gloabal_token.dart';
 
-// Models
 class OrderModel {
   final String id;
   final String orderNumber;
@@ -50,28 +49,22 @@ class OrderModel {
     return OrderModel(
       id: json['_id'] ?? json['id'] ?? '',
       orderNumber:
-      json['orderNumber']?.toString() ??
-          json['id']?.substring(18, 24) ??
-          'N/A',
+      json['orderNumber']?.toString() ?? json['id']?.substring(18, 24) ?? 'N/A',
       tableNumber: json['tableNumber']?.toString() ?? 'N/A',
       waiterName: json['waiterName']?.toString() ?? 'N/A',
-      itemsCount: json['itemsCount'] ?? 0,
+      itemsCount: (json['itemsCount'] ?? 0).toInt(), // double -> int
       subtotal: (json['subtotal'] ?? 0).toDouble(),
       serviceAmount: (json['serviceAmount'] ?? 0).toDouble(),
       finalTotal: (json['finalTotal'] ?? 0).toDouble(),
       status: json['status']?.toString() ?? 'N/A',
       receiptPrinted: json['receiptPrinted'] ?? false,
-      createdAt:
-      json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'].toString()) ??
-          DateTime.now()
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
           : DateTime.now(),
-      completedAt:
-      json['completedAt'] != null
+      completedAt: json['completedAt'] != null
           ? DateTime.tryParse(json['completedAt'].toString())
           : null,
-      items:
-      json['items'] != null
+      items: json['items'] != null
           ? (json['items'] as List)
           .map((item) => OrderItem.fromJson(item))
           .toList()
@@ -110,13 +103,14 @@ class OrderItem {
   });
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
-    final qty = json['quantity'] ?? 1;
+    final qty = (json['quantity'] ?? 1).toInt(); // double -> int
     final itemPrice = (json['price'] ?? 0).toDouble();
+    final totalValue = (json['total'] ?? (itemPrice * qty)).toDouble();
     return OrderItem(
       name: json['name']?.toString() ?? '',
       quantity: qty,
       price: itemPrice,
-      total: (json['total'] ?? (itemPrice * qty)).toDouble(),
+      total: totalValue,
     );
   }
 
@@ -156,10 +150,11 @@ class ApiResponse<T> {
   ApiResponse({required this.success, this.data, required this.message});
 }
 
+// AuthServices
 class AuthServices {
   static const String baseUrl = "${ApiConfig.baseUrl}";
-  static const String userCode = "123";
-  static const String password = "1234";
+  static const String userCode = "2004";
+  static const String password = "2004";
 
   static Future<void> saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
@@ -653,7 +648,15 @@ class _OrderTablePageState extends State<OrderTablePage> {
 
   Future<void> _initializeToken() async {
     try {
-      // SharedPreferences dan token olish
+      // ❗ Avval KassirTokenManager dan tokenni olish
+      _token = KassirTokenManager().getKassirToken();
+
+      if (_token != null && _token!.isNotEmpty) {
+        print("🔑 Token KassirTokenManager dan olindi: ${_token!.substring(0, 20)}...");
+        return;
+      }
+
+      // KassirTokenManager da yo'q bo'lsa, SharedPreferences dan olish
       _token = await AuthServices.getTokens();
       print("🔑 Mavjud token SharedPreferences dan: ${_token?.substring(0, 20) ?? 'Yo\'q'}...");
 
@@ -662,7 +665,7 @@ class _OrderTablePageState extends State<OrderTablePage> {
         final result = await AuthServices.loginAndPrintToken();
         if (result.success) {
           _token = result.data;
-          print("✅ Yangi token olindi: ${_token!.substring(0, 20)}...");
+          print("✅ Yangi token olindi");
         } else {
           throw Exception(result.message);
         }
@@ -671,7 +674,9 @@ class _OrderTablePageState extends State<OrderTablePage> {
       print("❌ Token olishda xatolik: $e");
       throw Exception('Token olishda xatolik: $e');
     }
-  }  Future<ApiResponse<List<OrderModel>>> getPendingPayments({
+  }
+
+  Future<ApiResponse<List<OrderModel>>> getPendingPayments({
     DateTime? startDate,
     DateTime? endDate,
     String? waiterName,
@@ -1366,7 +1371,7 @@ class _OrderTablePageState extends State<OrderTablePage> {
                       _buildTableHeaderCell('№'),
                       _buildTableHeaderCell('Sana/Vaqt'),
                       _buildTableHeaderCell('Stol'),
-                      _buildTableHeaderCell('Dona'),
+                      _buildTableHeaderCell('Birligi'),
                       _buildTableHeaderCell('Jami'),
                       _buildTableHeaderCell('Xizmat'),
                       _buildTableHeaderCell('Yakuniy'),
@@ -1500,18 +1505,44 @@ class _OrderTablePageState extends State<OrderTablePage> {
   }
 
   Widget _buildDateCell(DateTime date) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          DateFormat('dd.MM.yy').format(date),
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
-        ),
-        Text(
-          DateFormat('HH:mm').format(date),
-          style: TextStyle(color: Colors.grey[600], fontSize: 10),
-        ),
-      ],
+    return Container(
+      width: 60, // Widget kengligi, ekranga full emas
+      height: 40, // Widget balandligi, ekranga full emas
+      alignment: Alignment.center, // Markazga tushadi
+      padding: EdgeInsets.all(4), // Ichki bo'shliq
+      decoration: BoxDecoration(
+        color: Colors.white, // Orqa fon, xohlaysiz o'zgartiring
+        borderRadius: BorderRadius.circular(6), // Biroz yumaloq
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.3),
+            blurRadius: 3,
+            offset: Offset(1, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            DateFormat('dd.MM.yy').format(date),
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 10,
+            ),
+          ),
+          SizedBox(height: 2),
+          Text(
+            DateFormat('HH:mm').format(date),
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 9,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

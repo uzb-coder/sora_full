@@ -3,9 +3,11 @@ import 'package:get/get.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:intl/date_symbol_data_local.dart'; // <-- MUHIM O'ZGARISH
 import 'Global/Global_token.dart';
+import 'Global/Socet.dart';
 import 'Kirish.dart';
 
 void main() async {
+  await SocketService();
   Get.put(TokenController());
   WidgetsFlutterBinding.ensureInitialized(); // <-- MUHIM O'ZGARISH
   await initializeDateFormatting('uz', null); // <-- MUHIM O'ZGARISH
