@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../../Global/Api_global.dart';
 
+
 class Food {
   final String id;
   final String name;
@@ -122,6 +123,7 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
   late Future<List<Category>> _futureCategories;
   late Future<List<Department>> _futureDepartments;
 
+
   @override
   void initState() {
     super.initState();
@@ -132,6 +134,24 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
     _futureFoods = fetchFoods(widget.token);
     _futureCategories = fetchCategories(widget.token);
     _futureDepartments = fetchDepartments(widget.token);
+  }
+
+
+  // 🔎 qidiruv
+  String _searchQuery = "";
+  final TextEditingController _searchController = TextEditingController();
+
+  // 📜 scroll saqlash
+  final ScrollController _scrollController = ScrollController();
+  double _savedScrollOffset = 0.0;
+
+  @override
+
+  void _refresh() {
+    setState(() {
+      _savedScrollOffset = _scrollController.offset;
+      _loadData();
+    });
   }
 
   Future<void> _showCreateFoodDialog() async => _showFoodDialog(null);
@@ -687,6 +707,7 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
         automaticallyImplyLeading: false,
         title: Row(
           children: [
+            // Chap tomonda: Mahsulot yaratish
             ElevatedButton.icon(
               onPressed: _showCreateFoodDialog,
               icon: const Icon(Icons.add, color: Colors.white, size: 16),
@@ -703,13 +724,52 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               ),
             ),
-            const Spacer(),
-            IconButton(
-              onPressed: () => setState(_loadData),
-              icon: const Icon(Icons.refresh, color: Colors.grey),
-              tooltip: 'Yangilash',
+
+            const Spacer(), // 🔑 chap va o‘ngni ajratadi
+
+            // O‘ng tomonda: Search + Yangilash yonma-yon
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 🔎 Search
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 250,),
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: "Qidirish...",
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = "");
+                        },
+                      )
+                          : null,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    ),
+                    onChanged: (val) {
+                      setState(() => _searchQuery = val.toLowerCase());
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+
+                // 🔄 Yangilash tugmasi
+                IconButton(
+                  onPressed: _refresh,
+                  icon: const Icon(Icons.refresh, color: Colors.grey),
+                  tooltip: 'Yangilash',
+                ),
+              ],
             ),
           ],
+
         ),
       ),
       body: Container(
@@ -722,26 +782,7 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
             }
             if (snapshot.hasError) {
               return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.error, size: 64, color: Colors.red),
-                      const SizedBox(height: 16),
-                      Text(
-                        "Xatolik yuz berdi: ${snapshot.error ?? 'Noma\'lum xatolik'}",
-                        style: const TextStyle(color: Colors.red, fontSize: 16),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => setState(_loadData),
-                        child: const Text('Qayta urinish'),
-                      ),
-                    ],
-                  ),
-                ),
+                child: Text("Xatolik: ${snapshot.error}"),
               );
             }
 
@@ -749,31 +790,35 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
             final categories = snapshot.data![1] as List<Category>? ?? [];
             final categoryMap = {for (var c in categories) c.id: c.title};
 
-            if (foods.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.inventory_2, size: 64, color: Colors.grey),
-                    const SizedBox(height: 16),
-                    const Text(
-                      "Mahsulotlar topilmadi",
-                      style: TextStyle(fontSize: 18, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: _showCreateFoodDialog,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Birinchi mahsulotni qo\'shing'),
-                    ),
-                  ],
-                ),
-              );
+            // 🔎 filter
+            final filteredFoods = foods.where((f) {
+              final q = _searchQuery;
+              if (q.isEmpty) return true;
+              return f.name.toLowerCase().contains(q) ||
+                  f.price.toString().contains(q) ||
+                  f.unit.toLowerCase().contains(q) ||
+                  f.soni.toString().contains(q) ||
+                  (f.expiration ?? "").toLowerCase().contains(q) ||
+                  (categoryMap[f.categoryId] ?? "").toLowerCase().contains(q) ||
+                  f.subcategory.toLowerCase().contains(q);
+            }).toList();
+
+            // 📜 scroll pozitsiyani qaytarish
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (_savedScrollOffset > 0 &&
+                  _scrollController.hasClients &&
+                  _scrollController.offset == 0) {
+                _scrollController.jumpTo(_savedScrollOffset);
+                _savedScrollOffset = 0.0;
+              }
+            });
+
+            if (filteredFoods.isEmpty) {
+              return const Center(child: Text("Mos mahsulot topilmadi"));
             }
 
             return Container(
               margin: const EdgeInsets.all(16),
-              height: MediaQuery.of(context).size.height,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(8),
@@ -781,16 +826,10 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
               ),
               child: Column(
                 children: [
-                  // Table header
+                  // header
                   Container(
                     height: 50,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(8),
-                        topRight: Radius.circular(8),
-                      ),
-                    ),
+                    color: Colors.grey[200],
                     child: Row(
                       children: [
                         Expanded(flex: 2, child: _buildHeaderCell("Nomi")),
@@ -804,87 +843,48 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                       ],
                     ),
                   ),
-                  // Table body with vertical scroll
+                  // body
                   Expanded(
                     child: ListView.builder(
-                      itemCount: foods.length,
+                      controller: _scrollController,
+                      itemCount: filteredFoods.length,
                       itemBuilder: (context, index) {
-                        final food = foods[index];
-                        final categoryTitle = categoryMap[food.categoryId] ?? 'Noma\'lum';
+                        final food = filteredFoods[index];
+                        final categoryTitle =
+                            categoryMap[food.categoryId] ?? 'Noma\'lum';
                         return Container(
                           height: 60,
                           decoration: BoxDecoration(
                             border: Border(
                               bottom: BorderSide(color: Colors.grey[300]!),
                             ),
-                            color: index % 2 == 0 ? Colors.white : Colors.grey[50],
+                            color: index % 2 == 0
+                                ? Colors.white
+                                : Colors.grey[50],
                           ),
                           child: Row(
                             children: [
-                              Expanded(
-                                flex: 2,
-                                child: _buildDataCell(
-                                  food.name,
-                                  isTitle: true,
-                                ),
-                              ),
-                              Expanded(
-                                flex: 1,
-                                child: _buildDataCell("${food.price} so'm"),
-                              ),
+                              Expanded(flex: 2, child: _buildDataCell(food.name, isTitle: true)),
+                              Expanded(flex: 1, child: _buildDataCell("${food.price} so'm")),
+                              Expanded(flex: 1, child: _buildDataCell(food.unit)),
+                              Expanded(flex: 1, child: _buildDataCell(food.soni.toString())),
+                              Expanded(flex: 1, child: _buildDataCell(food.expiration?.substring(0, 10) ?? '')),
+                              Expanded(flex: 2, child: _buildDataCell(categoryTitle)),
+                              Expanded(flex: 2, child: _buildDataCell(food.subcategory.isNotEmpty ? food.subcategory : '-')),
                               Expanded(
                                 flex: 1,
-                                child: _buildDataCell(food.unit),
-                              ),
-                              Expanded(
-                                flex: 1,
-                                child: _buildDataCell(food.soni.toString()),
-                              ),
-                              Expanded(
-                                flex: 1,
-                                child: _buildDataCell(
-                                  food.expiration != null && food.expiration!.length >= 10
-                                      ? food.expiration!.substring(0, 10)
-                                      : '',
-                                ),
-                              ),
-                              Expanded(
-                                flex: 2,
-                                child: _buildDataCell(categoryTitle),
-                              ),
-                              Expanded(
-                                flex: 2,
-                                child: _buildDataCell(
-                                  food.subcategory.isNotEmpty ? food.subcategory : '-',
-                                ),
-                              ),
-                              Expanded(
-                                flex: 1,
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.edit_outlined,
-                                          color: Colors.blue,
-                                          size: 18,
-                                        ),
-                                        onPressed: () => _showEditFoodDialog(food),
-                                        tooltip: 'Tahrirlash',
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.delete_outline,
-                                          color: Colors.red,
-                                          size: 18,
-                                        ),
-                                        onPressed: () => _confirmDelete(food),
-                                        tooltip: 'O\'chirish',
-                                      ),
-                                    ],
-                                  ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_outlined, color: Colors.blue, size: 18),
+                                      onPressed: () => _showEditFoodDialog(food),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                                      onPressed: () => _confirmDelete(food),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -901,7 +901,6 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
       ),
     );
   }
-
   Future<void> _confirmDelete(Food food) async {
     final confirmed = await showDialog<bool>(
       context: context,

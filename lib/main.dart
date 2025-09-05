@@ -1,16 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:get/get_core/src/get_main.dart';
-import 'package:intl/date_symbol_data_local.dart'; // <-- MUHIM O'ZGARISH
+import 'package:intl/date_symbol_data_local.dart';
+import 'dart:io' show Platform;
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite/sqflite.dart';
+
 import 'Global/Global_token.dart';
-import 'Global/Socet.dart';
 import 'Kirish.dart';
 
 void main() async {
-  await SocketService();
+  WidgetsFlutterBinding.ensureInitialized(); // MUHIM
+
+  if (!Platform.isAndroid && !Platform.isIOS) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+
   Get.put(TokenController());
-  WidgetsFlutterBinding.ensureInitialized(); // <-- MUHIM O'ZGARISH
-  await initializeDateFormatting('uz', null); // <-- MUHIM O'ZGARISH
+
+  await initializeDateFormatting('uz', null);
+
   runApp(const MyApp());
 }
 
@@ -41,7 +50,7 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      home: WelcomeScreen(),
+      home: WelcomeScreen(), // Sizning login/entry sahifangiz
     );
   }
 }

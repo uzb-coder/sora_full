@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -55,6 +57,7 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
   bool isLoading = true;
   bool isCrudLoading = false;
   WebSocketChannel? _channel;
+  Timer? _statusCheckTimer;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _ipController = TextEditingController();
@@ -69,15 +72,19 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
   @override
   void dispose() {
     _channel?.sink.close(status.goingAway);
+    _statusCheckTimer?.cancel();
     super.dispose();
   }
 
-  // 📡 WebSocket ulanishi
+  // 📡 WebSocket ulanishi (saqlab qoldim, lekin client-side check qo'shdim)
   void connectToSocket() {
     _channel = WebSocketChannel.connect(
       Uri.parse('wss://sora-b.vercel.app/printer-status'),
     );
     print("Token : ${widget.token}");
+
+    // Agar server token talab qilsa, uni yuborishga urinib ko'ring (taxminiy fix)
+    _channel!.sink.add(jsonEncode({'token': widget.token}));
 
     _channel!.stream.listen((message) {
       final data = jsonDecode(message);
@@ -96,10 +103,52 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
     });
   }
 
+  // 🏓 Printer online/offline ni tekshirish (client-side ping orqali)
+  Future<String> checkPrinterStatus(String ip) async {
+    try {
+      // Printerlar ko'pincha 80-portda HTTP server yoki 9100-da raw printing ishlatadi.
+      // Bu yerda 80-portni sinab ko'ramiz, agar kerak bo'lsa 9100 ga o'zgartiring.
+      final socket = await Socket.connect(ip, 80, timeout: const Duration(seconds: 1));
+      socket.destroy();
+      return 'online';
+    } catch (e) {
+      return 'offline';
+    }
+  }
+
+  // 🔄 Har 2 sekundda statuslarni yangilash (judda tez real-time uchun)
+  void startStatusChecks() {
+    _statusCheckTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+      if (printers.isEmpty) return;
+
+      List<Future> futures = [];
+      for (var printer in List.from(printers)) { // Kopiyasini ishlatish uchun
+        futures.add(
+          checkPrinterStatus(printer.ip).then((status) {
+            final index = printers.indexWhere((p) => p.id == printer.id);
+            if (index != -1) {
+              printers[index] = Printer(
+                id: printers[index].id,
+                name: printers[index].name,
+                ip: printers[index].ip,
+                status: status,
+                lastChecked: DateTime.now().toIso8601String(),
+              );
+            }
+          }),
+        );
+      }
+      await Future.wait(futures);
+      setState(() {});
+      savePrintersToCache(printers);
+    });
+  }
+
   // 📂 Local cache dan yuklash
   Future<void> loadCacheAndFetch() async {
     await loadCachedPrinters();
-    fetchPrinters();
+    await fetchPrinters();
+    startStatusChecks(); // Fetchdan keyin status checklarni boshlash
   }
 
   Future<void> loadCachedPrinters() async {
@@ -115,8 +164,6 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
   }
 
   Future<void> savePrintersToCache(List<Printer> printers) async {
-
-
     final prefs = await SharedPreferences.getInstance();
     final jsonString = jsonEncode(printers.map((p) => p.toJson()).toList());
     await prefs.setString('cached_printers', jsonString);
@@ -148,8 +195,6 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
 
   // ➕ Printer yaratish
   Future<void> createPrinter() async {
-
-
     setState(() => isCrudLoading = true);
 
     final name = _nameController.text.trim();
@@ -169,7 +214,7 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
       },
       body: jsonEncode({'name': name, 'ip': ip}),
     );
-    print("📡 fetchPrinters Status: ${response.statusCode}");
+    print("📡 createPrinter Status: ${response.statusCode}");
     print("📦 Response Body: ${response.body}");
     print("Token : ${widget.token}");
 
@@ -211,9 +256,9 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
       },
       body: jsonEncode({'name': name, 'ip': ip}),
     );
-  print("${widget.token}");
+    print("Token : ${widget.token}");
     setState(() => isCrudLoading = false);
-    print("📡 fetchPrinters Status: ${response.statusCode}");
+    print("📡 updatePrinter Status: ${response.statusCode}");
     print("📦 Response Body: ${response.body}");
     if (response.statusCode == 200) {
       Navigator.of(
@@ -247,6 +292,7 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
     if (response.statusCode == 200) {
       printers.removeWhere((p) => p.id == id);
       setState(() {});
+      savePrintersToCache(printers);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -265,64 +311,71 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
       context: context,
       builder:
           (_) => AlertDialog(
-            alignment: Alignment.center,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: Text(
-              id == null ? "Yangi Printer qo'shish" : "Printerni tahrirlash",
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-            ),
-            content: SizedBox(
-              width: 400,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: _nameController,
-                    decoration: InputDecoration(
-                      labelText: "Printer nomi",
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: _ipController,
-                    decoration: InputDecoration(
-                      labelText: "IP manzili",
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed:
-                    () => Navigator.of(context, rootNavigator: true).pop(),
-                child: const Text("Bekor qilish"),
-              ),
-              ElevatedButton(
-                onPressed:
-                    () => id == null ? createPrinter() : updatePrinter(id),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.lightBlue,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
+        alignment: Alignment.center,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: Text(
+          id == null ? "Yangi Printer qo'shish" : "Printerni tahrirlash",
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+        ),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _nameController,
+                decoration: InputDecoration(
+                  labelText: "Printer nomi",
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-                child: const Text(
-                  "Saqlash",
-                  style: TextStyle(color: Colors.black),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _ipController,
+                decoration: InputDecoration(
+                  labelText: "IP manzili",
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ),
             ],
           ),
+        ),
+        actions: [
+          TextButton(
+            onPressed:
+                () => Navigator.of(context, rootNavigator: true).pop(),
+            child: const Text("Bekor qilish"),
+          ),
+          ElevatedButton(
+            onPressed: isCrudLoading
+                ? null
+                : () => id == null ? createPrinter() : updatePrinter(id),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.lightBlue,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 12,
+              ),
+            ),
+            child: isCrudLoading
+                ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+                : const Text(
+              "Saqlash",
+              style: TextStyle(color: Colors.black),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -331,26 +384,26 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
       context: context,
       builder:
           (_) => AlertDialog(
-            title: const Text("O'chirishni tasdiqlaysizmi?"),
-            content: const Text("Bu printerni butunlay o'chirasiz."),
-            actions: [
-              TextButton(
-                onPressed:
-                    () => Navigator.of(context, rootNavigator: true).pop(),
-                child: const Text("Bekor qilish"),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.of(
-                    context,
-                    rootNavigator: true,
-                  ).pop(); // ✅ Faqat dialog yopiladi
-                  deletePrinter(id);
-                },
-                child: const Text("O'chirish"),
-              ),
-            ],
+        title: const Text("O'chirishni tasdiqlaysizmi?"),
+        content: const Text("Bu printerni butunlay o'chirasiz."),
+        actions: [
+          TextButton(
+            onPressed:
+                () => Navigator.of(context, rootNavigator: true).pop(),
+            child: const Text("Bekor qilish"),
           ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(
+                context,
+                rootNavigator: true,
+              ).pop(); // ✅ Faqat dialog yopiladi
+              deletePrinter(id);
+            },
+            child: const Text("O'chirish"),
+          ),
+        ],
+      ),
     );
   }
 
@@ -390,89 +443,91 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
                 const SizedBox(height: 16),
                 Expanded(
                   child:
-                      isLoading
-                          ? const Center(child: CircularProgressIndicator())
-                          : printers.isEmpty
-                          ? const Center(child: Text("Printerlar topilmadi"))
-                          : Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.grey.shade300),
-                            ),
-                            padding: const EdgeInsets.all(12),
-                            child: DataTable2(
-                              columnSpacing: 12,
-                              headingRowColor: MaterialStateProperty.all(
-                                const Color(0xFFE0E0E0),
+                  isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : printers.isEmpty
+                      ? const Center(child: Text("Printerlar topilmadi"))
+                      : Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    padding: const EdgeInsets.all(12),
+                    child: DataTable2(
+                      columnSpacing: 12,
+                      headingRowColor: MaterialStateProperty.all(
+                        const Color(0xFFE0E0E0),
+                      ),
+                      headingTextStyle: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                      columns: const [
+                        DataColumn(label: Text("Nomi")),
+                        DataColumn(label: Text("IP manzili")),
+                        DataColumn(label: Text("Holati")),
+                        DataColumn(label: Text("Amallar")),
+                      ],
+                      rows:
+                      printers.map((printer) {
+                        return DataRow(
+                          cells: [
+                            DataCell(Text(printer.name)),
+                            DataCell(Text(printer.ip)),
+                            DataCell(
+                              Text(
+                                printer.status.toUpperCase(),
+                                style: TextStyle(
+                                  color:
+                                  printer.status
+                                      .toLowerCase() ==
+                                      'online'
+                                      ? Colors.green
+                                      : Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                              headingTextStyle: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black,
-                              ),
-                              columns: const [
-                                DataColumn(label: Text("Nomi")),
-                                DataColumn(label: Text("IP manzili")),
-                                DataColumn(label: Text("Holati")),
-                                DataColumn(label: Text("Amallar")),
-                              ],
-                              rows:
-                                  printers.map((printer) {
-                                    return DataRow(
-                                      cells: [
-                                        DataCell(Text(printer.name)),
-                                        DataCell(Text(printer.ip)),
-                                        DataCell(
-                                          Text(
-                                            printer.status,
-                                            style: TextStyle(
-                                              color:
-                                                  printer.status
-                                                              .toLowerCase() ==
-                                                          'online'
-                                                      ? Colors.green
-                                                      : Colors.red,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Row(
-                                            children: [
-                                              IconButton(
-                                                icon: const Icon(
-                                                  Icons.edit,
-                                                  color: Color(0xFF2196F3),
-                                                ),
-                                                onPressed:
-                                                    () => showPrinterDialog(
-                                                      id: printer.id,
-                                                      initialName: printer.name,
-                                                      initialIp: printer.ip,
-                                                    ),
-                                              ),
-                                              IconButton(
-                                                icon: const Icon(
-                                                  Icons.delete,
-                                                  color: Colors.red,
-                                                ),
-                                                onPressed:
-                                                    () => confirmDelete(
-                                                      printer.id,
-                                                    ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  }).toList(),
                             ),
-                          ),
+                            DataCell(
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.edit,
+                                      color: Color(0xFF2196F3),
+                                    ),
+                                    onPressed:
+                                        () => showPrinterDialog(
+                                      id: printer.id,
+                                      initialName: printer.name,
+                                      initialIp: printer.ip,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.delete,
+                                      color: Colors.red,
+                                    ),
+                                    onPressed:
+                                        () => confirmDelete(
+                                      printer.id,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
+          if (isCrudLoading)
+            const Center(child: CircularProgressIndicator()),
         ],
       ),
     );

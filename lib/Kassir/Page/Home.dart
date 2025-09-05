@@ -192,7 +192,7 @@ class _KassirPageState extends State<KassirPage> {
                 _buildButton(
                   label: 'Выход',
                   onPressed: () {
-                    Navigator.pushNamed(context, '/');
+                    Navigator.pop(context);
                   },
                 ),
               ],

@@ -22,7 +22,7 @@ class Ovqat {
   final double price;
   final String categoryId;
   final String categoryName;
-  final String? subcategory; // Added subcategory field
+  final String? subcategory; // 🔹 Mahsulot subkategoriya nomi
   final String? description;
   final String? image;
   final String? unit;
@@ -37,36 +37,53 @@ class Ovqat {
     this.subcategory,
     this.description,
     this.image,
-    required this.subcategories,
     this.unit,
+    required this.subcategories,
   });
 
   factory Ovqat.fromJson(Map<String, dynamic> json) {
-    var subcategoriesJson = json['subcategories'] as List<dynamic>? ?? [];
-    List<Subcategory> subcategoriesList = subcategoriesJson.map((e) => Subcategory.fromJson(e)).toList();
+    final category = json['category_id'] ?? json['category'];
 
     return Ovqat(
       id: json['_id'] ?? '',
       name: json['name'] ?? '',
       price: (json['price'] ?? 0).toDouble(),
-      categoryId: json['category']?['_id'] ?? json['category_id'] ?? '',
-      categoryName: json['category']?['title'] ?? json['category_name'] ?? '',
-      subcategory: json['subcategory'], // Added subcategory parsing
+
+      // ✅ category obyekt yoki string bo‘lishi mumkin
+      categoryId: category is Map<String, dynamic>
+          ? (category['_id'] ?? '')
+          : category?.toString() ?? '',
+
+      categoryName: category is Map<String, dynamic>
+          ? (category['title'] ?? '')
+          : (json['category_name'] ?? ''),
+
+      subcategory: json['subcategory'],
       description: json['description'],
       image: json['image'],
-      subcategories: subcategoriesList,
-      unit: json['unit'] ?? '', // <- JSON’dan olamiz
+      unit: json['unit'] ?? '',
+
+      subcategories: (json['subcategories'] is List)
+          ? (json['subcategories'] as List)
+          .map((e) => Subcategory.fromJson(e))
+          .toList()
+          : [],
     );
   }
+
   Map<String, dynamic> toJson() {
     return {
       '_id': id,
       'name': name,
       'price': price,
-      'category': {'_id': categoryId, 'title': categoryName},
-      'subcategory': subcategory, // Added subcategory to JSON
+      'category': {
+        '_id': categoryId,
+        'title': categoryName,
+      },
+      'subcategory': subcategory,
       'description': description,
       'image': image,
+      'unit': unit,
       'subcategories': subcategories.map((e) => e.toJson()).toList(),
     };
   }

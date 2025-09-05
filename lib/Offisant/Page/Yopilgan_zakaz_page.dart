@@ -13,6 +13,7 @@ import 'package:sora/Global/Api_global.dart';
 import 'package:win32/win32.dart';
 
 import '../../Gloabal_token.dart';
+import 'Jami_zakaz.dart';
 
 class OrderModel {
   final String id;
@@ -28,6 +29,7 @@ class OrderModel {
   final DateTime createdAt;
   final DateTime? completedAt;
   final List<OrderItem> items;
+  final int percentage; // 🔥 yangi qo'shildi
 
   OrderModel({
     required this.id,
@@ -43,13 +45,17 @@ class OrderModel {
     required this.createdAt,
     this.completedAt,
     required this.items,
+    required this.percentage, // 🔥 konstruktor
+
   });
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
     return OrderModel(
       id: json['_id'] ?? json['id'] ?? '',
       orderNumber:
-      json['orderNumber']?.toString() ?? json['id']?.substring(18, 24) ?? 'N/A',
+      json['orderNumber']?.toString() ??
+          json['id']?.substring(18, 24) ??
+          'N/A',
       tableNumber: json['tableNumber']?.toString() ?? 'N/A',
       waiterName: json['waiterName']?.toString() ?? 'N/A',
       itemsCount: (json['itemsCount'] ?? 0).toInt(), // double -> int
@@ -58,17 +64,24 @@ class OrderModel {
       finalTotal: (json['finalTotal'] ?? 0).toDouble(),
       status: json['status']?.toString() ?? 'N/A',
       receiptPrinted: json['receiptPrinted'] ?? false,
-      createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
+      createdAt:
+      json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'].toString()) ??
+          DateTime.now()
           : DateTime.now(),
-      completedAt: json['completedAt'] != null
+      completedAt:
+      json['completedAt'] != null
           ? DateTime.tryParse(json['completedAt'].toString())
           : null,
-      items: json['items'] != null
+      items:
+      json['items'] != null
           ? (json['items'] as List)
           .map((item) => OrderItem.fromJson(item))
           .toList()
           : [],
+      percentage: json['waiter']?['percentage'] != null
+          ? (json['waiter']['percentage'] as num).toInt()
+          : 0,
     );
   }
 
@@ -212,14 +225,7 @@ class UsbPrinterService {
       final pcbNeeded = calloc<DWORD>();
       final pcReturned = calloc<DWORD>();
 
-      EnumPrinters(
-          flags,
-          nullptr,
-          2,
-          nullptr,
-          0,
-          pcbNeeded,
-          pcReturned);
+      EnumPrinters(flags, nullptr, 2, nullptr, 0, pcbNeeded, pcReturned);
 
       final cbBuf = pcbNeeded.value;
       if (cbBuf == 0) {
@@ -249,17 +255,9 @@ class UsbPrinterService {
 
         for (var i = 0; i < count; i++) {
           final printerName =
-          printerInfo
-              .elementAt(i)
-              .ref
-              .pPrinterName
-              .toDartString();
+          printerInfo.elementAt(i).ref.pPrinterName.toDartString();
           final portName =
-          printerInfo
-              .elementAt(i)
-              .ref
-              .pPortName
-              .toDartString();
+          printerInfo.elementAt(i).ref.pPortName.toDartString();
 
           print("🖨️ Printer: $printerName, Port: $portName");
 
@@ -287,7 +285,6 @@ class UsbPrinterService {
       return [];
     }
   }
-
 
   Future<ApiResponse<bool>> printOrderReceipt(OrderModel order) async {
     print("🖨️ Chek chop etish boshlandi: ${order.orderNumber}");
@@ -345,8 +342,10 @@ class UsbPrinterService {
     }
   }
 
-  Future<ApiResponse<bool>> _printToSpecificPrinter(OrderModel order,
-      String printerName,) async {
+  Future<ApiResponse<bool>> _printToSpecificPrinter(
+      OrderModel order,
+      String printerName,
+      ) async {
     final hPrinter = calloc<HANDLE>();
     final docInfo = calloc<DOC_INFO_1>();
 
@@ -435,7 +434,6 @@ class UsbPrinterService {
     }
   }
 
-
   Future<List<int>> loadLogoBytes() async {
     try {
       ByteData byteData = await rootBundle.load('assets/rasm/sara.png');
@@ -497,12 +495,11 @@ class UsbPrinterService {
 
     return <int>[
       0x1B, 0x40, // Printer init
-
       // LOGO (512px, markazda)
       ...centeredLogo,
       // Logo va matn orasida bo'sh joy yo'q
       ...centerText("Namangan shahri, Namangan tumani"),
-      ...centerText("Tel: +998 90 123 45 67"),
+      ...centerText("Tel: +998 99 003 09 80"),
       ...centerText("----------------------------------"),
 
       // BUYURTMA CHEKI (katta va qalin shrift)
@@ -512,14 +509,17 @@ class UsbPrinterService {
       0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
       0x1B, 0x21, 0x00, // Oddiy shriftga qaytish
       0x0A, // Bo'sh qator
-
       // Sana va vaqt
       ...centerText(printDateTime),
       ...centerText("----------------------------------"),
       0x1B, 0x45, 0x01, // Qalin shrift
-      ...leftAlignText("       Buyurtma: ${order.orderNumber}"), // 4 ta bo'shlik
+      ...leftAlignText(
+        "       Buyurtma: ${order.orderNumber}",
+      ), // 4 ta bo'shlik
       ...leftAlignText("       Stol: ${order.tableNumber}"), // 4 ta bo'shlik
-      ...leftAlignText("       Ofitsiant: ${order.waiterName}"), // 4 ta bo'shlik
+      ...leftAlignText(
+        "       Ofitsiant: ${order.waiterName}",
+      ), // 4 ta bo'shlik
       0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
       ...centerText("----------------------------------"),
 
@@ -539,10 +539,9 @@ class UsbPrinterService {
       // Hisob-kitob
       0x1B, 0x21, 0x00, // Oddiy shrift
       ...centerText("Mahsulotlar: ${formatNumber(order.subtotal)} so'm"),
-      ...centerText("Xizmat haqi: ${formatNumber(order.serviceAmount)} so'm"),
-      0x0A, // Xizmat haqi va jami o'rtasida bo'shliq
+      ...centerText("Xizmat haqi (${order.percentage}%): ${formatNumber(order.serviceAmount)} so'm"
+      ),      0x0A, // Xizmat haqi va jami o'rtasida bo'shliq
       0x0A, // Qo'shimcha bo'shliq
-
       // Yakuniy summa (katta va qalin)
       0x1B, 0x21, 0x20, // Katta shrift
       0x1B, 0x45, 0x01, // Qalin shrift
@@ -560,7 +559,6 @@ class UsbPrinterService {
       0x1B, 0x21, 0x00, // Oddiy shrift
       0x0A, // Bo'sh qator
       0x0A, // Bo'sh qator
-
       // Chekni kesish
       0x1B, 0x64, 0x06, // 6 ta bo'sh qator
       0x1D, 0x56, 0x00, // Kesish
@@ -581,7 +579,10 @@ class UsbPrinterService {
       String line = namePart;
 
       // Bo'sh joylar sonini hisoblash
-      int spaceCount = lineLength - utf8.encode(namePart).length - utf8.encode(qtyTotal).length;
+      int spaceCount =
+          lineLength -
+              utf8.encode(namePart).length -
+              utf8.encode(qtyTotal).length;
       if (spaceCount < 1) spaceCount = 1;
 
       line += ' ' * spaceCount + qtyTotal;
@@ -625,7 +626,6 @@ class UsbPrinterService {
           (Match m) => '${m[1]} ',
     );
   }
-
 }
 
 // Order Table Page
@@ -639,7 +639,6 @@ class OrderTablePage extends StatefulWidget {
 }
 
 class _OrderTablePageState extends State<OrderTablePage> {
-
   final String baseUrl = "${ApiConfig.baseUrl}";
   String? _token;
   static const String _cacheKey = 'pending_orders_cache';
@@ -652,13 +651,17 @@ class _OrderTablePageState extends State<OrderTablePage> {
       _token = KassirTokenManager().getKassirToken();
 
       if (_token != null && _token!.isNotEmpty) {
-        print("🔑 Token KassirTokenManager dan olindi: ${_token!.substring(0, 20)}...");
+        print(
+          "🔑 Token KassirTokenManager dan olindi: ${_token!.substring(0, 20)}...",
+        );
         return;
       }
 
       // KassirTokenManager da yo'q bo'lsa, SharedPreferences dan olish
       _token = await AuthServices.getTokens();
-      print("🔑 Mavjud token SharedPreferences dan: ${_token?.substring(0, 20) ?? 'Yo\'q'}...");
+      print(
+        "🔑 Mavjud token SharedPreferences dan: ${_token?.substring(0, 20) ?? 'Yo\'q'}...",
+      );
 
       if (_token == null || _token!.isEmpty) {
         print("🔄 Yangi token olinyapti...");
@@ -704,14 +707,14 @@ class _OrderTablePageState extends State<OrderTablePage> {
         return ApiResponse(
           success: true,
           data: filteredOrders,
-          message: 'Ma\'lumotlar keshdan yuklandi (${filteredOrders.length} ta)',
+          message:
+          'Ma\'lumotlar keshdan yuklandi (${filteredOrders.length} ta)',
         );
       }
     }
 
     // Serverdan ma'lumot olish
     final url = Uri.parse('$baseUrl/orders/pending-payments');
-    print("🌐 So'rov: $url");
 
     try {
       final response = await http.get(
@@ -723,14 +726,13 @@ class _OrderTablePageState extends State<OrderTablePage> {
       );
 
       print("📡 Javob kodi: ${response.body}");
-      print("📡 Javob kodi: ${widget.token}");
-      // print("📡 Javob kodi: ${response.statusCode}");
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
         if (data['success'] == true && data['pending_orders'] != null) {
-          List<OrderModel> allOrders = (data['pending_orders'] as List)
+          List<OrderModel> allOrders =
+          (data['pending_orders'] as List)
               .map((order) => OrderModel.fromJson(order))
               .toList();
 
@@ -747,7 +749,8 @@ class _OrderTablePageState extends State<OrderTablePage> {
           return ApiResponse(
             success: true,
             data: filteredOrders,
-            message: 'Ma\'lumotlar serverdan yuklandi (${filteredOrders.length} ta)',
+            message:
+            'Ma\'lumotlar serverdan yuklandi (${filteredOrders.length} ta)',
           );
         } else {
           return ApiResponse(
@@ -796,7 +799,11 @@ class _OrderTablePageState extends State<OrderTablePage> {
     if (orderId.isEmpty) {
       print('⚠️ ID bo\'sh, server update o\'tkazib yuborildi');
       await _clearCache();
-      return ApiResponse(success: true, data: true, message: 'Local yangilandi');
+      return ApiResponse(
+        success: true,
+        data: true,
+        message: 'Local yangilandi',
+      );
     }
 
     final url = Uri.parse('$baseUrl/orders/$orderId');
@@ -835,9 +842,13 @@ class _OrderTablePageState extends State<OrderTablePage> {
   Future<void> _saveToCache(List<OrderModel> orders) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final ordersJson = orders.map((order) => jsonEncode(order.toJson())).toList();
+      final ordersJson =
+      orders.map((order) => jsonEncode(order.toJson())).toList();
       await prefs.setString(_cacheKey, jsonEncode(ordersJson));
-      await prefs.setString(_cacheTimestampKey, DateTime.now().toIso8601String());
+      await prefs.setString(
+        _cacheTimestampKey,
+        DateTime.now().toIso8601String(),
+      );
       print("💾 ${orders.length} ta buyurtma keshga saqlandi");
     } catch (e) {
       print("❌ Keshga saqlashda xatolik: $e");
@@ -853,9 +864,11 @@ class _OrderTablePageState extends State<OrderTablePage> {
       if (cachedData != null && timestamp != null) {
         final cacheTime = DateTime.tryParse(timestamp);
         if (cacheTime != null &&
-            DateTime.now().difference(cacheTime).inMinutes < _cacheDurationMinutes) {
+            DateTime.now().difference(cacheTime).inMinutes <
+                _cacheDurationMinutes) {
           final ordersJson = jsonDecode(cachedData) as List;
-          final orders = ordersJson
+          final orders =
+          ordersJson
               .map((json) => OrderModel.fromJson(jsonDecode(json)))
               .toList();
           print("📦 Keshdan ${orders.length} ta buyurtma yuklandi");
@@ -888,22 +901,42 @@ class _OrderTablePageState extends State<OrderTablePage> {
       ) {
     List<OrderModel> filteredOrders = orders;
 
-    if (waiterName != null && waiterName.isNotEmpty && waiterName != 'Barcha ofitsiantlar') {
-      filteredOrders = filteredOrders.where((order) =>
-          order.waiterName.toLowerCase().contains(waiterName.toLowerCase())).toList();
+    if (waiterName != null &&
+        waiterName.isNotEmpty &&
+        waiterName != 'Barcha ofitsiantlar') {
+      filteredOrders =
+          filteredOrders
+              .where(
+                (order) => order.waiterName.toLowerCase().contains(
+              waiterName.toLowerCase(),
+            ),
+          )
+              .toList();
     }
 
     if (startDate != null && endDate != null) {
       final start = DateTime(startDate.year, startDate.month, startDate.day);
-      final end = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
+      final end = DateTime(
+        endDate.year,
+        endDate.month,
+        endDate.day,
+        23,
+        59,
+        59,
+      );
 
-      filteredOrders = filteredOrders.where((order) {
-        return (order.createdAt.isAfter(start.subtract(Duration(seconds: 1))) &&
-            order.createdAt.isBefore(end.add(Duration(seconds: 1)))) ||
-            (order.completedAt != null &&
-                order.completedAt!.isAfter(start.subtract(Duration(seconds: 1))) &&
-                order.completedAt!.isBefore(end.add(Duration(seconds: 1))));
-      }).toList();
+      filteredOrders =
+          filteredOrders.where((order) {
+            return (order.createdAt.isAfter(
+              start.subtract(Duration(seconds: 1)),
+            ) &&
+                order.createdAt.isBefore(end.add(Duration(seconds: 1)))) ||
+                (order.completedAt != null &&
+                    order.completedAt!.isAfter(
+                      start.subtract(Duration(seconds: 1)),
+                    ) &&
+                    order.completedAt!.isBefore(end.add(Duration(seconds: 1))));
+          }).toList();
     }
 
     return filteredOrders;
@@ -926,6 +959,7 @@ class _OrderTablePageState extends State<OrderTablePage> {
     endDate = today;
     _loadOrders();
   }
+
   Future<void> _loadOrders({bool forceRefresh = false}) async {
     setState(() => isLoading = true);
 
@@ -937,33 +971,43 @@ class _OrderTablePageState extends State<OrderTablePage> {
         forceRefresh: forceRefresh,
       );
 
-      setState(() {
-        isLoading = false;
-        if (result.success && result.data != null) {
-          allOrders = result.data!;
-          filteredOrders = allOrders;
-
-          // Success message
-          if (!forceRefresh) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('✅ ${result.message}'),
-                backgroundColor: Colors.green,
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-        } else {
-          allOrders = [];
-          filteredOrders = [];
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('❌ ${result.message}'),
-              backgroundColor: Colors.orange,
+      if (result.success && result.data != null) {
+        // ❗ SharedPreferences’dan chop qilingan orderlarni tekshirish
+        List<OrderModel> updatedOrders = [];
+        for (var order in result.data!) {
+          bool printed = await _isOrderPrinted(order.id);
+          updatedOrders.add(
+            OrderModel(
+              id: order.id,
+              orderNumber: order.orderNumber,
+              tableNumber: order.tableNumber,
+              waiterName: order.waiterName,
+              itemsCount: order.itemsCount,
+              subtotal: order.subtotal,
+              serviceAmount: order.serviceAmount,
+              finalTotal: order.finalTotal,
+              status: order.status,
+              receiptPrinted: printed || order.receiptPrinted, // ✅ doim tekshiramiz
+              createdAt: order.createdAt,
+              completedAt: order.completedAt,
+              items: order.items, percentage: order.percentage,
             ),
           );
         }
-      });
+
+        setState(() {
+          isLoading = false;
+          allOrders = updatedOrders;
+          filteredOrders = updatedOrders;
+        });
+
+      } else {
+        setState(() {
+          isLoading = false;
+          allOrders = [];
+          filteredOrders = [];
+        });
+      }
     } catch (e) {
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1012,13 +1056,30 @@ class _OrderTablePageState extends State<OrderTablePage> {
     _loadOrders(forceRefresh: true);
   }
 
+  Future<void> _savePrintedOrder(String orderId) async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String> printedOrders = prefs.getStringList("printed_orders") ?? [];
+    if (!printedOrders.contains(orderId)) {
+      printedOrders.add(orderId);
+      await prefs.setStringList("printed_orders", printedOrders);
+    }
+  }
+
+  Future<bool> _isOrderPrinted(String orderId) async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String> printedOrders = prefs.getStringList("printed_orders") ?? [];
+    return printedOrders.contains(orderId);
+  }
+
+
   Future<void> _printOrder(OrderModel order, int index) async {
     try {
       // Loading dialog
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
+        builder:
+            (context) => AlertDialog(
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1042,7 +1103,10 @@ class _OrderTablePageState extends State<OrderTablePage> {
       if (printResult.success) {
         print("✅ Chek chop etildi, lokal holat yangilanmoqda...");
 
-        // Lokal ravishda holatni yangilash
+        // 🔐 SharedPreferences ga saqlash
+        await _savePrintedOrder(order.id);
+
+        // ✅ Lokal ravishda yangilash
         setState(() {
           filteredOrders[index] = OrderModel(
             id: order.id,
@@ -1054,16 +1118,14 @@ class _OrderTablePageState extends State<OrderTablePage> {
             serviceAmount: order.serviceAmount,
             finalTotal: order.finalTotal,
             status: order.status,
-            receiptPrinted: true, // Holatni true qilish
+            receiptPrinted: true, // ❗ doim true
             createdAt: order.createdAt,
             completedAt: order.completedAt,
-            items: order.items,
+            items: order.items, percentage: order.percentage,
           );
         });
 
-        // Keshni tozalash
-        await _clearCache();
-
+        // 🟢 Xabar chiqish
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -1082,11 +1144,11 @@ class _OrderTablePageState extends State<OrderTablePage> {
           ),
         );
       } else {
+        // ❌ Agar printResult.success false bo‘lsa
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ ${printResult.message}'),
+            content: Text('❌ Chek chiqarishda xatolik: ${printResult.message}'),
             backgroundColor: Colors.red,
-            duration: Duration(seconds: 4),
           ),
         );
       }
@@ -1099,7 +1161,9 @@ class _OrderTablePageState extends State<OrderTablePage> {
         ),
       );
     }
-  }  @override
+  }
+
+  @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 800;
@@ -1124,7 +1188,7 @@ class _OrderTablePageState extends State<OrderTablePage> {
           onPressed: () {
             Navigator.pop(context);
           },
-          icon: Icon(Icons.reply_all_outlined, color: Colors.white,size: 30,),
+          icon: Icon(Icons.reply_all_outlined, color: Colors.white, size: 30),
           tooltip: 'Qaytish',
         ),
         title: Column(
@@ -1159,6 +1223,23 @@ class _OrderTablePageState extends State<OrderTablePage> {
             onPressed: _selectDateRange,
             icon: Icon(Icons.date_range, color: Colors.white),
             tooltip: 'Sana tanlash',
+          ),
+          IconButton(
+            padding: EdgeInsets.only(right: 20, left: 20),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder:
+                      (context) => OrderTablePage1(
+                    waiterName: widget.waiterName,
+                    token: widget.token,
+                  ),
+                ),
+              );
+            },
+            icon: Icon(Icons.save, color: Colors.white, size: 40),
+            tooltip: 'Hamma buyurtmalar',
           ),
         ],
       ),
@@ -1528,23 +1609,18 @@ class _OrderTablePageState extends State<OrderTablePage> {
         children: [
           Text(
             DateFormat('dd.MM.yy').format(date),
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 10,
-            ),
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
           ),
           SizedBox(height: 2),
           Text(
             DateFormat('HH:mm').format(date),
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 9,
-            ),
+            style: TextStyle(color: Colors.grey[600], fontSize: 9),
           ),
         ],
       ),
     );
   }
+
 
   Widget _buildTableCell(String tableNumber) {
     return Container(
@@ -1620,7 +1696,9 @@ class _OrderTablePageState extends State<OrderTablePage> {
             foregroundColor:
             order.receiptPrinted ? Colors.grey[600] : Colors.white,
             padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(6),
+            ),
             elevation: order.receiptPrinted ? 0 : 2,
           ),
           child: Row(

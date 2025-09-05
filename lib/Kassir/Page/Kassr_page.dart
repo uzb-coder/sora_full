@@ -7,15 +7,17 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/services.dart' show rootBundle; // Faqat rootBundle import qilish
+import 'package:flutter/services.dart'
+    show rootBundle; // Faqat rootBundle import qilish
 import 'package:ffi/ffi.dart';
 import 'package:image/image.dart' as img;
 import 'package:win32/win32.dart';
 import 'package:sora/Global/Api_global.dart';
 import 'package:top_snackbar_flutter/top_snack_bar.dart';
+import '../../Admin/Page/Zall_page.dart';
 import '../../Offisant/Page/Users_page.dart';
 import '../Model/KassirModel.dart';
-import 'dart:ffi' hide Size; // Size ni dart:ffi dan yashirish
+import 'dart:ffi' hide Size;
 
 class UsbPrinterService {
   Future<List<String>> getConnectedPrinters() async {
@@ -24,14 +26,7 @@ class UsbPrinterService {
       final pcbNeeded = calloc<DWORD>();
       final pcReturned = calloc<DWORD>();
 
-      EnumPrinters(
-          flags,
-          nullptr,
-          2,
-          nullptr,
-          0,
-          pcbNeeded,
-          pcReturned);
+      EnumPrinters(flags, nullptr, 2, nullptr, 0, pcbNeeded, pcReturned);
 
       final cbBuf = pcbNeeded.value;
       if (cbBuf == 0) {
@@ -60,8 +55,10 @@ class UsbPrinterService {
         print("🖨️ ${count} ta printer topildi");
 
         for (var i = 0; i < count; i++) {
-          final printerName = printerInfo.elementAt(i).ref.pPrinterName.toDartString();
-          final portName = printerInfo.elementAt(i).ref.pPortName.toDartString();
+          final printerName =
+          printerInfo.elementAt(i).ref.pPrinterName.toDartString();
+          final portName =
+          printerInfo.elementAt(i).ref.pPortName.toDartString();
 
           print("🖨️ Printer: $printerName, Port: $portName");
 
@@ -91,7 +88,9 @@ class UsbPrinterService {
   }
 
   Future<bool> printOrderReceipt(PendingOrder order) async {
-    print("🖨️ Chek chop etish boshlandi: ${order.formattedOrderNumber ?? order.orderNumber}");
+    print(
+      "🖨️ Chek chop etish boshlandi: ${order.formattedOrderNumber ?? order.orderNumber}",
+    );
 
     try {
       final printers = await getConnectedPrinters();
@@ -134,7 +133,10 @@ class UsbPrinterService {
     }
   }
 
-  Future<bool> _printToSpecificPrinter(PendingOrder order, String printerName) async {
+  Future<bool> _printToSpecificPrinter(
+      PendingOrder order,
+      String printerName,
+      ) async {
     final hPrinter = calloc<HANDLE>();
     final docInfo = calloc<DOC_INFO_1>();
 
@@ -273,68 +275,63 @@ class UsbPrinterService {
 
     return <int>[
       0x1B, 0x40, // Printer init
-
       // LOGO (512px, markazda)
       ...centeredLogo,
       // Logo va matn orasida bo'sh joy yo'q
+      0x1B, 0x45, 0x01, // Qalin shrift
       ...centerText("Namangan shahri, Namangan tumani"),
-      ...centerText("Tel: +998 90 123 45 67"),
+      ...centerText("Tel: +998 99 003 09 80"),
       ...centerText("----------------------------------"),
 
       // BUYURTMA CHEKI (katta va qalin shrift)
       0x1B, 0x21, 0x20, // Katta shrift
       0x1B, 0x45, 0x01, // Qalin shrift
       ...centerText("BUYURTMA CHEKI"),
-      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
-      0x1B, 0x21, 0x00, // Oddiy shriftga qaytish
+      0x1B, 0x21, 0x00, // Oddiy shrift hajmi (qalin qoladi)
       0x0A, // Bo'sh qator
-
       // Sana va vaqt
       ...centerText(printDateTime),
       ...centerText("----------------------------------"),
-      0x1B, 0x45, 0x01, // Qalin shrift
-      ...leftAlignText("       Buyurtma: ${order.formattedOrderNumber ?? order.orderNumber}"),
+      ...leftAlignText(
+        "       Buyurtma: ${order.formattedOrderNumber ?? order.orderNumber}",
+      ),
       ...leftAlignText("       Stol: ${order.tableName ?? 'N/A'}"),
       ...leftAlignText("       Ofitsiant: ${order.waiterName ?? 'N/A'}"),
-      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
       ...centerText("----------------------------------"),
 
-      // MAHSULOTLAR SARLAVHASI
-      0x1B, 0x21, 0x10, // O'rta shrift
-      0x1B, 0x45, 0x01, // Qalin shrift
-      ...centerText("MAHSULOTLAR"),
-      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
-      0x1B, 0x21, 0x00, // Oddiy shrift
-      ...centerText("----------------------------------"),
-
-      // Mahsulotlar ro'yxati (markazda)
+      // MAHSULOTLAR SARLAVHASI olib tashlandi ❌
+      // faqat ro‘yxat qoldi
       ...buildItemsList(order.items),
 
       ...centerText("----------------------------------"),
 
-      // Hisob-kitob (servicefee va subtotal bo'lmasa faqat totalPrice)
-      0x1B, 0x21, 0x00, // Oddiy shrift
+      // 🔹 Hisob-kitob
+      ...centerText(
+        "Mahsulotlar: ${formatNumber(order.totalPrice - order.serviceAmount)} so'm",
+      ),
+      ...centerText(
+        "Xizmat haqi (${order.percentage}%): ${formatNumber(order.serviceAmount)} so'm",
+      ),
+
       // Qo'shimcha bo'shliq
-      0x0A, // Xizmat haqi va jami o'rtasida bo'shliq
-      0x0A, // Qo'shimcha bo'shliq
+      0x0A,
+      0x0A,
 
       // Yakuniy summa (katta va qalin)
       0x1B, 0x21, 0x20, // Katta shrift
       0x1B, 0x45, 0x01, // Qalin shrift
       ...centerText("JAMI: ${formatNumber(order.totalPrice)} so'm"),
-      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
-      0x1B, 0x21, 0x00, // Oddiy shrift
+      0x1B, 0x21, 0x00,
       ...centerText("----------------------------------"),
 
       // Rahmat xabari
-      0x1B, 0x21, 0x20, // Katta shrift
-      0x1B, 0x45, 0x01, // Qalin shrift
+      0x1B, 0x21, 0x20,
+      0x1B, 0x45, 0x01,
       ...centerText("TASHRIFINGIZ UCHUN"),
       ...centerText("RAHMAT!"),
-      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
-      0x1B, 0x21, 0x00, // Oddiy shrift
-      0x0A, // Bo'sh qator
-      0x0A, // Bo'sh qator
+      0x1B, 0x21, 0x00,
+      0x0A,
+      0x0A,
 
       // Chekni kesish
       0x1B, 0x64, 0x06, // 6 ta bo'sh qator
@@ -359,7 +356,10 @@ class UsbPrinterService {
       String line = namePart;
 
       // Bo'sh joylar sonini hisoblash
-      int spaceCount = lineLength - utf8.encode(namePart).length - utf8.encode(qtyTotal).length;
+      int spaceCount =
+          lineLength -
+              utf8.encode(namePart).length -
+              utf8.encode(qtyTotal).length;
       if (spaceCount < 1) spaceCount = 1;
 
       line += ' ' * spaceCount + qtyTotal;
@@ -428,15 +428,48 @@ class _FastUnifiedPendingPaymentsPageState
   bool _disposed = false;
   final UsbPrinterService _printerService =
   UsbPrinterService(); // Bu qatorni qo'shing
+  Map<String, String> _tableToHallMap = {}; // Table ID -> Hall Name
+  bool _hallsLoaded = false;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _loadHalls(); // Hall ma'lumotlarini yuklash
     // Polling interval 5 soniya - real-time ga yaqinlashtirildi
     _refreshTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (!_disposed) _refreshData();
     });
+  }
+
+  Future<void> _loadHalls() async {
+    if (_hallsLoaded) return;
+
+    try {
+      final halls = await HallController.getHalls(widget.token);
+      final Map<String, String> tempMap = {};
+
+      for (final hall in halls) {
+        for (final table in hall.tables) {
+          tempMap[table.id] = hall.name;
+        }
+      }
+
+      setState(() {
+        _tableToHallMap = tempMap;
+        _hallsLoaded = true;
+      });
+    } catch (e) {
+      debugPrint('Hall ma\'lumotlarini yuklashda xatolik: $e');
+    }
+  }
+
+  String _getHallName(PendingOrder order) {
+    // Agar order da table_id bor bo'lsa
+    final tableId = order.id; // yoki boshqa table identifier
+
+    // Table ID orqali hall nomini topish
+    return _tableToHallMap[tableId] ?? 'Noma\'lum zal';
   }
 
   static const String baseUrl = '${ApiConfig.baseUrl}';
@@ -451,7 +484,6 @@ class _FastUnifiedPendingPaymentsPageState
     return _token;
   }
 
-  // Parallel API calls - 2 ta API ni bir vaqtda chaqirish
   Future<Map<String, List<PendingOrder>>> fetchAllOrdersFast() async {
     final now = DateTime.now();
 
@@ -469,7 +501,6 @@ class _FastUnifiedPendingPaymentsPageState
     try {
       // Widget orqali uzatilgan token ishlatish
       final kassirToken = widget.token;
-      // PARALLEL API CALLS - 2 ta API ni bir vaqtda
       final results = await Future.wait([
         http.get(
           Uri.parse('$baseUrl/orders/my-pending'),
@@ -486,7 +517,6 @@ class _FastUnifiedPendingPaymentsPageState
           },
         ),
       ], eagerError: false);
-
       List<PendingOrder> pendingOrders = [];
       List<PendingOrder> closedOrders = [];
 
@@ -798,12 +828,18 @@ class _FastUnifiedPendingPaymentsPageState
                     minWidth: 100,
                   ),
                   margin: const EdgeInsets.symmetric(horizontal: 10),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.green,
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8),
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 8,
+                      ),
                     ],
                   ),
                   child: const Text(
@@ -818,7 +854,9 @@ class _FastUnifiedPendingPaymentsPageState
             reverseAnimationDuration: const Duration(milliseconds: 50),
           );
         } else {
-          _showSnackBar('Чек чоп этишда хатолик юз берди. Принтер уланганлигини текширинг.');
+          _showSnackBar(
+            'Чек чоп этишда хатолик юз берди. Принтер уланганлигини текширинг.',
+          );
         }
       }
     } catch (e) {
@@ -1275,8 +1313,12 @@ class _FastUnifiedPendingPaymentsPageState
           flex: 1,
         ),
         _buildDataCell(order.waiterName ?? 'N/A', flex: 2),
-        _buildDataCell(order.tableName ?? 'N/A', flex: 1),
-        _buildDataCell(NumberFormat().format(order.totalPrice), flex: 2),
+        _buildDataCell('${order.tableName ?? 'N/A'}\n', flex: 1),
+        _buildDataCell(
+          NumberFormat().format(order.serviceAmount ?? 0),
+          flex: 1,
+        ), // New column
+        _buildDataCell(NumberFormat().format(order.finalTotal), flex: 2),
       ],
     );
   }
@@ -1291,7 +1333,7 @@ class _FastUnifiedPendingPaymentsPageState
           order.formattedOrderNumber ?? order.orderNumber,
           flex: 1,
         ),
-        _buildDataCell(order.tableName ?? 'N/A', flex: 1),
+        _buildDataCell('${order.tableName ?? 'N/A'}', flex: 1), // Zal qo'shildi
         _buildDataCell(order.waiterName ?? 'N/A', flex: 1),
         _buildDataCell(order.items.length.toString(), flex: 1),
         _buildDataCell(
@@ -1608,6 +1650,10 @@ class _FastUnifiedPendingPaymentsPageState
                           _buildHeaderCell('Заказ', flex: 1),
                           _buildHeaderCell('Официант', flex: 2),
                           _buildHeaderCell('Стол', flex: 1),
+                          _buildHeaderCell(
+                            'Хизмат ҳақи',
+                            flex: 1,
+                          ), // New column
                           _buildHeaderCell('Жами', flex: 2),
                         ],
                       ),
@@ -1999,7 +2045,10 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
 
     return Center(
       child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 4, sigmaY: 4), // Orqa fonni hiralash
+        filter: ui.ImageFilter.blur(
+          sigmaX: 4,
+          sigmaY: 4,
+        ), // Orqa fonni hiralash
         child: Dialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),

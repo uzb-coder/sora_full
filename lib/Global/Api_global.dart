@@ -1,3 +1,5 @@
 class ApiConfig {
-  static const String baseUrl = "https://sora-b-mikrayon.vercel.app/api";
+
+static const String baseUrl = "https://soramik.richman.uz/api";
+
 }
