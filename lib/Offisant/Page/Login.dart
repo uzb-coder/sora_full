@@ -57,10 +57,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _updateDateTime() {
     final now = DateTime.now();
-    setState(() {
-      _timeString = DateFormat('H:mm:ss').format(now);
-      _dateString = DateFormat("EEEE, d MMMM y", 'ru').format(now);
-    });
+    if (mounted) {
+      setState(() {
+        _timeString = DateFormat('H:mm:ss').format(now);
+        _dateString = DateFormat("EEEE, d MMMM y", 'ru').format(now);
+      });
+    }
   }
 
   // 🔹 Tokenni saqlash
@@ -84,7 +86,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // 🔹 Serverdan token olish
-  Future<String?> _getTokenFromApi(String userCode, String pin, String role) async {
+  Future<String?> _getTokenFromApi(
+    String userCode,
+    String pin,
+    String role,
+  ) async {
     try {
       final res = await http.post(
         Uri.parse('$baseUrl/auth/login'),
@@ -102,7 +108,8 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         final err = jsonDecode(res.body);
         setState(() {
-          _errorMessage = err['message'] ?? "❌ PIN noto‘g‘ri yoki foydalanuvchi topilmadi.";
+          _errorMessage =
+              err['message'] ?? "❌ PIN noto‘g‘ri yoki foydalanuvchi topilmadi.";
         });
       }
     } catch (e) {
@@ -114,6 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // 🔹 Login qilish
+  // 🔹 Login qilish
   Future<void> _login() async {
     final pin = _pinController.text.trim();
     if (pin.isEmpty) return;
@@ -123,14 +131,16 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = null;
     });
 
-    final tokenKey = "${widget.user.role}_${widget.user.userCode}_token";
-
     try {
       // 1) Local DB dan tekshirish
       final localUser = await DBHelper.getUserByCode(widget.user.userCode);
       if (localUser != null && localUser.password == pin) {
         debugPrint("✅ Offline login ishladi");
-        final storedToken = await getToken(tokenKey);
+
+        // 🔑 Avval saqlangan active_token ni tekshiramiz
+        final prefs = await SharedPreferences.getInstance();
+        final storedToken = prefs.getString("active_token");
+
         if (storedToken != null && isTokenValid(storedToken)) {
           _navigateByRole(widget.user.role, storedToken);
           return;
@@ -138,10 +148,19 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       // 2) Online login
-      final token = await _getTokenFromApi(widget.user.userCode, pin, widget.user.role);
+      final token = await _getTokenFromApi(
+        widget.user.userCode,
+        pin,
+        widget.user.role,
+      );
       if (token != null) {
-        await saveToken(tokenKey, token);
+        // 🔑 faqat active_token sifatida saqlaymiz
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString("active_token", token);
+
+        // 🔑 PIN ni yangilab qo‘yamiz
         await DBHelper.updateUserWithPin(widget.user.id, pin);
+
         debugPrint("✅ Online login va token saqlandi");
         _navigateByRole(widget.user.role, token);
       }
@@ -173,13 +192,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _onPinChanged(String value) async {
-    final requiredLength = widget.user.password?.length; // ✅ foydalanuvchining parol uzunligi
+    final requiredLength =
+        widget.user.password?.length; // ✅ foydalanuvchining parol uzunligi
 
     if (value.length == requiredLength) {
       await _login();
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -229,10 +248,15 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       child: Column(
         children: [
-          Text(_timeString,
-              style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold)),
+          Text(
+            _timeString,
+            style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 5),
-          Text(_dateString, style: const TextStyle(fontSize: 16, color: Colors.grey)),
+          Text(
+            _dateString,
+            style: const TextStyle(fontSize: 16, color: Colors.grey),
+          ),
         ],
       ),
     );
@@ -279,11 +303,18 @@ class _LoginScreenState extends State<LoginScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("${widget.user.firstName} ${widget.user.lastName}",
-                  style: const TextStyle(color: Colors.white70, fontSize: 16)),
-              Text(widget.user.role.toUpperCase(),
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+              Text(
+                "${widget.user.firstName} ${widget.user.lastName}",
+                style: const TextStyle(color: Colors.white70, fontSize: 16),
+              ),
+              Text(
+                widget.user.role.toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ],
           ),
         ],
@@ -311,37 +342,52 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Widget _buildNumpad() {
-    final keys = ['1','2','3','4','5','6','7','8','9','C','0','DEL'];
+    final keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', 'DEL'];
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: keys.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3, childAspectRatio: 1.8, crossAxisSpacing: 10, mainAxisSpacing: 10),
+        crossAxisCount: 3,
+        childAspectRatio: 1.8,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+      ),
       itemBuilder: (context, i) {
         final key = keys[i];
         return ElevatedButton(
           onPressed: () {
             if (key == 'DEL') {
               if (_pinController.text.isNotEmpty) {
-                _pinController.text =
-                    _pinController.text.substring(0, _pinController.text.length - 1);
+                _pinController.text = _pinController.text.substring(
+                  0,
+                  _pinController.text.length - 1,
+                );
               }
             } else if (key == 'C') {
               _pinController.clear();
             } else {
               _pinController.text += key;
-              _onPinChanged(_pinController.text); // 🔹 Har raqam yozilganda tekshiradi
+              _onPinChanged(
+                _pinController.text,
+              ); // 🔹 Har raqam yozilganda tekshiradi
             }
           },
           style: ElevatedButton.styleFrom(
-            backgroundColor: key == 'C' || key == 'DEL' ? Colors.grey[300] : Colors.white,
+            backgroundColor:
+                key == 'C' || key == 'DEL' ? Colors.grey[300] : Colors.white,
           ),
-          child: key == 'DEL'
-              ? const Icon(Icons.backspace_outlined, color: Colors.black)
-              : Text(key,
-              style: const TextStyle(
-                  fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black)),
+          child:
+              key == 'DEL'
+                  ? const Icon(Icons.backspace_outlined, color: Colors.black)
+                  : Text(
+                    key,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
         );
       },
     );
@@ -352,14 +398,23 @@ class _LoginScreenState extends State<LoginScreen> {
       children: [
         Expanded(
           child: OutlinedButton(
-            onPressed: _isLoading ? null : () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const UserListPage()));
-            },
+            onPressed:
+                _isLoading
+                    ? null
+                    : () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const UserListPage()),
+                      );
+                    },
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 15),
               side: BorderSide(color: Colors.grey.shade400),
             ),
-            child: const Text("Назад", style: TextStyle(fontSize: 18, color: Colors.black54)),
+            child: const Text(
+              "Назад",
+              style: TextStyle(fontSize: 18, color: Colors.black54),
+            ),
           ),
         ),
         const SizedBox(width: 15),
@@ -370,12 +425,24 @@ class _LoginScreenState extends State<LoginScreen> {
               backgroundColor: const Color(0xFF144D37),
               padding: const EdgeInsets.symmetric(vertical: 15),
             ),
-            child: _isLoading
-                ? const SizedBox(
-                width: 20, height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Text("Вход",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+            child:
+                _isLoading
+                    ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                    : const Text(
+                      "Вход",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
           ),
         ),
       ],

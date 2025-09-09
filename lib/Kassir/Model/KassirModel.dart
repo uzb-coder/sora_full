@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class PendingOrder {
   final String id;
   final String orderNumber;
@@ -13,9 +15,9 @@ class PendingOrder {
   final List<Map<String, dynamic>> items;
   final MixedPaymentDetails? mixedPaymentDetails;
 
-  // 🔹 yangi maydonlar
+  // yangi maydonlar
   final int percentage;
-  final String? hallName; // ✅ qo‘shildi
+  final String? hallName;
 
   PendingOrder({
     required this.id,
@@ -32,75 +34,206 @@ class PendingOrder {
     required this.items,
     this.mixedPaymentDetails,
     required this.percentage,
-    this.hallName, // ✅ konstruktor
+    this.hallName,
   });
 
   factory PendingOrder.fromJson(Map<String, dynamic> json) {
-    final subtotal = (json['subtotal'] ?? 0).toDouble();
-    final finalTotal =
-    (json['final_total'] ?? json['finalTotal'] ?? 0).toDouble();
-    final waiterPercentage = json['waiter']?['percentage'] != null
-        ? (json['waiter']['percentage'] as num).toInt()
-        : 0;
+    // --- ID & Order number ---
+    final dynamic rawId = json['_id'] ?? json['id'] ?? json['order_id'] ?? json['orderId'];
+    final String id = (rawId ?? '').toString();
+
+    final String? formattedNum =
+        json['formatted_order_number']?.toString() ?? json['orderNumber']?.toString();
+    final String orderNumber = formattedNum ??
+        json['order_number']?.toString() ??
+        id; // fallback id ga
+
+    // --- Table info (map/string/turli kalitlar) ---
+    String? tableName;
+    String? hallName;
+    String name = 'N/A';
+
+    final dynamic table = json['table'] ?? json['table_id'];
+    if (table is Map) {
+      tableName = (table['display_name'] ?? table['name'] ?? table['number'])?.toString();
+      hallName = (table['hall'] is Map) ? table['hall']['name']?.toString() : null;
+      name = (table['name'] ?? table['display_name'] ?? 'N/A').toString();
+    } else if (table is String) {
+      tableName = table;
+      name = table;
+    } else {
+      tableName = json['tableName']?.toString() ?? json['table_number']?.toString() ?? 'N/A';
+      name = tableName ?? 'N/A';
+    }
+
+    // --- Waiter info & percentage ---
+    String? waiterName;
+    int percentage = 0;
+
+    final dynamic waiter = json['waiter'] ?? json['user_id'];
+    if (waiter is Map) {
+      waiterName = (waiter['name'] ??
+          waiter['full_name'] ??
+          waiter['first_name'] ??
+          waiter['username'])
+          ?.toString();
+      final dynamic wPercent = waiter['percentage'];
+      if (wPercent != null) percentage = _asInt(wPercent);
+    }
+
+    // fallback kalitlar
+    waiterName ??= json['waiterName']?.toString() ?? json['waiter_name']?.toString() ?? 'N/A';
+    if (percentage == 0 && json['percentage'] != null) {
+      percentage = _asInt(json['percentage']);
+    }
+
+    // --- Items (String JSON / List / Map) ---
+    final List<Map<String, dynamic>> items =
+    _parseItems(json['items'] ?? json['order_items']);
+
+    // --- Subtotal (agar kelmasa itemsdan hisoblaymiz) ---
+    double subtotal = _asDouble(json['subtotal']);
+    if (subtotal == 0 && items.isNotEmpty) {
+      subtotal = _sumItemsSubtotal(items);
+    }
+
+    // --- finalTotal / totalPrice / serviceAmount ---
+    final double finalTotal =
+    _asDouble(json['final_total'] ?? json['finalTotal'] ?? json['total_price']);
+    double totalPrice = _asDouble(json['total_price'] ?? json['finalTotal'] ?? json['final_total']);
 
     double serviceAmount;
     if (json['service_amount'] != null) {
-      serviceAmount = (json['service_amount']).toDouble();
-    } else if (waiterPercentage > 0 && subtotal > 0) {
-      serviceAmount = subtotal * waiterPercentage / 100;
-    } else if (finalTotal > subtotal) {
+      serviceAmount = _asDouble(json['service_amount']);
+    } else if (percentage > 0 && subtotal > 0) {
+      serviceAmount = (subtotal * percentage / 100.0);
+    } else if (finalTotal > 0 && subtotal > 0 && finalTotal > subtotal) {
       serviceAmount = finalTotal - subtotal;
     } else {
       serviceAmount = 0;
     }
 
+    // Agar totalPrice bo‘sh bo‘lsa, finalTotal yoki subtotal + service bilan to‘ldiramiz
+    if (totalPrice == 0) {
+      totalPrice = (finalTotal > 0) ? finalTotal : (subtotal + serviceAmount);
+    }
+
+    // --- createdAt & status ---
+    final String createdAt = (json['createdAt'] ??
+        json['created_at'] ??
+        json['completedAt'] ??
+        DateTime.now().toIso8601String())
+        .toString();
+
+    final String status = (json['status'] ?? 'pending').toString();
+
+    // --- Mixed payment ---
+    final MixedPaymentDetails? mixedPaymentDetails = (json['mixedPaymentDetails'] is Map)
+        ? MixedPaymentDetails.fromJson(json['mixedPaymentDetails'] as Map<String, dynamic>)
+        : null;
+
     return PendingOrder(
-      id: json['_id']?.toString() ?? json['id']?.toString() ?? '',
-      orderNumber: json['orderNumber']?.toString() ??
-          json['formatted_order_number']?.toString() ??
-          '',
-      formattedOrderNumber: json['formatted_order_number']?.toString() ??
-          json['orderNumber']?.toString(),
-      // ✅ stol nomini olish
-      tableName: json['table']?['name']?.toString() ?? // ✅ yopiq uchun
-          json['table_id']?['name']?.toString() ?? // ✅ ochiq uchun
-          json['tableName']?.toString() ??
-          json['table_number']?.toString() ??
-          'N/A',
-      waiterName: json['waiterName']?.toString() ??
-          json['waiter_name']?.toString() ??
-          json['waiter']?['name']?.toString() ??
-          json['user_id']?['first_name']?.toString() ??
-          'N/A',
-      totalPrice: (json['total_price'] ??
-          json['finalTotal'] ??
-          json['final_total'] ??
-          0)
-          .toDouble(),
+      id: id,
+      name: name,
+      orderNumber: orderNumber,
+      formattedOrderNumber: formattedNum,
+      tableName: tableName,
+      waiterName: waiterName,
+      totalPrice: totalPrice,
       serviceAmount: serviceAmount,
-      finalTotal: finalTotal,
-      status: json['status']?.toString() ?? 'pending',
-      createdAt: json['createdAt']?.toString() ??
-          json['completedAt']?.toString() ??
-          DateTime.now().toIso8601String(),
-      items: (json['items'] as List<dynamic>? ?? [])
-          .map((item) => {
-        'name': item['name']?.toString() ?? 'N/A',
-        'quantity': item['quantity'] ?? 0,
-        'price': item['price'] ?? 0,
-        'printer_ip': item['printer_ip']?.toString(),
-        'food_id': item['food_id']?.toString() ?? '',
-      })
-          .toList(),
-      mixedPaymentDetails: json['mixedPaymentDetails'] != null
-          ? MixedPaymentDetails.fromJson(
-        json['mixedPaymentDetails'] as Map<String, dynamic>,
-      )
-          : null,
-      percentage: waiterPercentage,
-      hallName: json['table']?['hall']?['name']?.toString(),
-      name: json['table']?['name']?.toString() ?? 'N/A', // agar `name` ham kerak bo‘lsa
+      finalTotal: (finalTotal > 0 ? finalTotal : totalPrice),
+      status: status,
+      createdAt: createdAt,
+      items: items,
+      mixedPaymentDetails: mixedPaymentDetails,
+      percentage: percentage,
+      hallName: hallName,
     );
+  }
+}
+
+// ----------------- Helperlar -----------------
+
+double _asDouble(dynamic v, [double fallback = 0]) {
+  if (v == null) return fallback;
+  if (v is num) return v.toDouble();
+  final s = v.toString().trim();
+  if (s.isEmpty) return fallback;
+  return double.tryParse(s) ?? fallback;
+}
+
+int _asInt(dynamic v, [int fallback = 0]) {
+  if (v == null) return fallback;
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return int.tryParse(v.toString()) ?? fallback;
+}
+
+double _sumItemsSubtotal(List<Map<String, dynamic>> items) {
+  double sum = 0;
+  for (final it in items) {
+    final q = _asDouble(it['quantity']);
+    final p = _asDouble(it['price']);
+    sum += (q * p);
+  }
+  return sum;
+}
+
+/// items ni xavfsiz parse qiladi:
+/// - String bo‘lsa jsonDecode qiladi
+/// - List bo‘lsa Map<String,dynamic> ga o‘tkazadi
+/// - Har bir element uchun name/quantity/price/printer_ip/food_id ni normallashtiradi
+List<Map<String, dynamic>> _parseItems(dynamic raw) {
+  List<dynamic> list;
+  if (raw == null) return <Map<String, dynamic>>[];
+
+  try {
+    if (raw is String) {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        list = decoded;
+      } else if (decoded is Map) {
+        list = [decoded];
+      } else {
+        return <Map<String, dynamic>>[];
+      }
+    } else if (raw is List) {
+      list = raw;
+    } else if (raw is Map) {
+      list = [raw];
+    } else {
+      return <Map<String, dynamic>>[];
+    }
+
+    return list.map<Map<String, dynamic>>((e) {
+      if (e is! Map) return <String, dynamic>{};
+
+      final m = Map<String, dynamic>.from(e);
+
+      // Normalizatsiya
+      final name = (m['name'] ??
+          m['food_name'] ??
+          m['title'] ??
+          m['display_name'] ??
+          'N/A')
+          .toString();
+
+      final quantity = _asDouble(m['quantity'] ?? m['qty'] ?? 0);
+      final price = _asDouble(m['price'] ?? m['unit_price'] ?? m['amount'] ?? 0);
+
+      final printerIp = m['printer_ip']?.toString();
+      final foodId = (m['food_id'] ?? m['_id'] ?? m['id'])?.toString() ?? '';
+
+      return <String, dynamic>{
+        'name': name,
+        'quantity': quantity, // UI’da num sifatida ishlating
+        'price': price,
+        'printer_ip': printerIp,
+        'food_id': foodId,
+      };
+    }).toList();
+  } catch (_) {
+    return <Map<String, dynamic>>[];
   }
 }
 

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'Categroya_UI.dart';
 import 'Hall_UI.dart';
 import 'Local_UI.dart';
+import 'Ochiq_zakaz.dart';
+import 'Yaratilgan_zakaz.dart';
 
 // 🔹 Drawer component (hamma sahifada ishlatish uchun)
 class AppDrawer extends StatelessWidget {
@@ -40,13 +42,32 @@ class AppDrawer extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const HallTablesPage()),
               );
             },
-          ),  ListTile(
+          ),
+          ListTile(
             leading: const Icon(Icons.pages),
             title: const Text("Kategorya"),
             onTap: () {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (_) => const CategoryFoodPage()),
+              );
+            },
+          ),  ListTile(
+            leading: const Icon(Icons.pages),
+            title: const Text("Yaratilgan zakaz"),
+            onTap: () {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const OrdersPage()),
+              );
+            },
+          ), ListTile(
+            leading: const Icon(Icons.pages),
+            title: const Text("Yopilgan zakaz"),
+            onTap: () {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => const ClosedOrdersPage()),
               );
             },
           ),

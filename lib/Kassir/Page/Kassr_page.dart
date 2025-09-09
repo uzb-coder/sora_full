@@ -15,6 +15,8 @@ import 'package:win32/win32.dart';
 import 'package:sora/Global/Api_global.dart';
 import 'package:top_snackbar_flutter/top_snack_bar.dart';
 import '../../Admin/Page/Zall_page.dart';
+import '../../DB/Servis/db_helper.dart';
+import '../../DB/Servis/sync_service.dart';
 import '../../Offisant/Page/Users_page.dart';
 import '../Model/KassirModel.dart';
 import 'dart:ffi' hide Size;
@@ -431,16 +433,36 @@ class _FastUnifiedPendingPaymentsPageState
   Map<String, String> _tableToHallMap = {}; // Table ID -> Hall Name
   bool _hallsLoaded = false;
 
+
+  Timer? _pollTimer;   // UI ma'lumotlarini yangilash (5s)
+  Timer? _syncTimer;   // server bilan sync (1m)
+
+
   @override
   void initState() {
     super.initState();
     _loadData();
-    _loadHalls(); // Hall ma'lumotlarini yuklash
-    // Polling interval 5 soniya - real-time ga yaqinlashtirildi
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+    _loadHalls();
+
+    // UI polling (ixtiyoriy)
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!_disposed) _refreshData();
     });
+
+    // 🔁 Umumiy sync (create -> items -> cancel -> close -> pay)
+    _syncTimer = Timer.periodic(const Duration(minutes: 1), (_) async {
+      await SyncService.syncAll(widget.token);
+    });
   }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _pollTimer?.cancel();
+    _syncTimer?.cancel();
+    super.dispose();
+  }
+
 
   Future<void> _loadHalls() async {
     if (_hallsLoaded) return;
@@ -484,10 +506,61 @@ class _FastUnifiedPendingPaymentsPageState
     return _token;
   }
 
+  Future<void> syncClosedOrdersAndPayments(String token) async {
+    try {
+      final db = await DBHelper.database;
+      final rows = await db.query(
+        'orders',
+        where: '(status = ? OR status = ?) AND is_synced = 0',
+        whereArgs: ['closed', 'paid'],
+      );
+
+      for (final row in rows) {
+        final orderId = row['id'] as String;
+        final paymentMethod = row['payment_method'] ?? 'cash';
+        final paymentAmount = row['payment_amount'] ?? 0;
+
+        final body = {
+          "paymentMethod": paymentMethod,
+          "paymentAmount": paymentAmount,
+          "orderId": orderId,
+        };
+
+        try {
+          final response = await http.post(
+            Uri.parse('${ApiConfig.baseUrl}/kassir/payment/$orderId'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(body),
+          );
+
+          if (response.statusCode == 200) {
+            await db.update(
+              'orders',
+              {'is_synced': 1},
+              where: 'id = ?',
+              whereArgs: [orderId],
+            );
+            debugPrint("✅ Serverga yuborildi: $orderId");
+          } else {
+            debugPrint("❌ Server xato [${response.statusCode}]: ${response.body}");
+          }
+        } catch (e) {
+          debugPrint("🌐 Internet yo‘q, sync qoldi: $e");
+        }
+      }
+    } catch (e, st) {
+      debugPrint("❌ syncClosedOrdersAndPayments xato: $e\n$st");
+    }
+  }
+
+
   Future<Map<String, List<PendingOrder>>> fetchAllOrdersFast() async {
     final now = DateTime.now();
 
-    // Cache check - 30 soniya ichida qayta chaqirmaydi
+    // Cache check
     if (_cache.containsKey('pending') &&
         _cache.containsKey('closed') &&
         !_cache['pending']!.isExpired &&
@@ -498,77 +571,135 @@ class _FastUnifiedPendingPaymentsPageState
       };
     }
 
+    List<PendingOrder> pendingOrders = [];
+    List<PendingOrder> closedOrders = [];
+
     try {
-      // Widget orqali uzatilgan token ishlatish
       final kassirToken = widget.token;
-      final results = await Future.wait([
-        http.get(
-          Uri.parse('$baseUrl/orders/my-pending'),
-          headers: {
-            'Authorization': 'Bearer $kassirToken',
-            'Content-Type': 'application/json',
-          },
-        ),
-        http.get(
-          Uri.parse('$baseUrl/orders/pending-payments'),
-          headers: {
-            'Authorization': 'Bearer $kassirToken',
-            'Content-Type': 'application/json',
-          },
-        ),
-      ], eagerError: false);
-      List<PendingOrder> pendingOrders = [];
-      List<PendingOrder> closedOrders = [];
 
-      // Pending orders parse
-      if (results[0].statusCode == 200) {
-        final data = jsonDecode(results[0].body);
-        final orders =
-        (data is Map && data['orders'] is List
-            ? data['orders'] as List
-            : data is List
-            ? data
-            : []);
-        pendingOrders =
-            orders
-                .map(
-                  (orderJson) =>
-                  PendingOrder.fromJson(orderJson as Map<String, dynamic>),
-            )
-                .toList();
-      }
-      // Closed orders parse
-      if (results[1].statusCode == 200) {
-        final data = jsonDecode(results[1].body);
-        final orders =
-        (data is Map && data['pending_orders'] is List
-            ? data['pending_orders'] as List
-            : data is List
-            ? data
-            : []);
-        closedOrders =
-            orders
-                .map(
-                  (orderJson) =>
-                  PendingOrder.fromJson(orderJson as Map<String, dynamic>),
-            )
-                .toList();
+      // 1️⃣ Localdan ochiq zakazlar
+      List<PendingOrder> localPending = [];
+      try {
+        final localRows = await DBHelper.getPendingOrders();
+        debugPrint("📦 Localdan ${localRows.length} ta pending order olindi");
+        localPending =
+            localRows.map((e) => PendingOrder.fromJson(e)).toList();
+      } catch (e, st) {
+        debugPrint("❌ Local pending xato: $e\n$st");
       }
 
-      // Cache update
+      // 2️⃣ Localdan yopiq zakazlar
+      List<PendingOrder> localClosed = [];
+      try {
+        final localRows = await DBHelper.getClosedOrders();
+        debugPrint("📦 Localdan ${localRows.length} ta closed order olindi");
+        localClosed =
+            localRows.map((e) => PendingOrder.fromJson(e)).toList();
+      } catch (e, st) {
+        debugPrint("❌ Local closed xato: $e\n$st");
+      }
+
+      // 3️⃣ Serverdan pending va closed
+      List<PendingOrder> serverPending = [];
+      List<PendingOrder> serverClosed = [];
+
+      try {
+        final responses = await Future.wait([
+          http.get(
+            Uri.parse('$baseUrl/orders/my-pending'),
+            headers: {
+              'Authorization': 'Bearer $kassirToken',
+              'Content-Type': 'application/json',
+            },
+          ),
+          http.get(
+            Uri.parse('$baseUrl/orders/pending-payments'),
+            headers: {
+              'Authorization': 'Bearer $kassirToken',
+              'Content-Type': 'application/json',
+            },
+          ),
+        ], eagerError: false);
+
+        // my-pending
+        final pendingResp = responses[0];
+        if (pendingResp.statusCode == 200) {
+          final data = jsonDecode(pendingResp.body);
+          final orders = (data is Map && data['orders'] is List)
+              ? data['orders'] as List
+              : (data is List ? data : []);
+          debugPrint("🌍 Serverdan ${orders.length} ta pending order olindi");
+          serverPending = orders
+              .map((o) => PendingOrder.fromJson(o as Map<String, dynamic>))
+              .toList();
+        }
+
+        // pending-payments
+        final closedResp = responses[1];
+        if (closedResp.statusCode == 200) {
+          final data = jsonDecode(closedResp.body);
+          final orders = (data is Map && data['pending_orders'] is List)
+              ? data['pending_orders'] as List
+              : (data is List ? data : []);
+          debugPrint("🌍 Serverdan ${orders.length} ta closed order olindi");
+          serverClosed = orders
+              .map((o) => PendingOrder.fromJson(o as Map<String, dynamic>))
+              .toList();
+        }
+      } catch (e, st) {
+        debugPrint("❌ Server fetch xato: $e\n$st");
+      }
+
+      // 4️⃣ Merge: Local + Server → dublikatlar yo‘q
+      pendingOrders = _mergeOrders(localPending, serverPending);
+      closedOrders = _mergeOrders(localClosed, serverClosed);
+
+      // Sort: eng yangisi oldinda
+      pendingOrders.sort((a, b) =>
+          (DateTime.tryParse(b.createdAt) ?? DateTime(0))
+              .compareTo(DateTime.tryParse(a.createdAt) ?? DateTime(0)));
+      closedOrders.sort((a, b) =>
+          (DateTime.tryParse(b.createdAt) ?? DateTime(0))
+              .compareTo(DateTime.tryParse(a.createdAt) ?? DateTime(0)));
+
+      debugPrint(
+          "✅ Pending=${pendingOrders.length}, Closed=${closedOrders.length}");
+
+      // 5️⃣ Cache update
       _cache['pending'] = CachedData(pendingOrders, now);
       _cache['closed'] = CachedData(closedOrders, now);
       _lastFetch = now;
 
       return {'pending': pendingOrders, 'closed': closedOrders};
-    } catch (e) {
-      debugPrint('Error fetching orders: $e');
-      // Eski cache qaytarish agar xatolik bo'lsa
+    } catch (e, st) {
+      debugPrint("❌ Umumiy xato: $e\n$st");
       return {
         'pending': _cache['pending']?.data ?? [],
         'closed': _cache['closed']?.data ?? [],
       };
     }
+  }
+
+  List<PendingOrder> _mergeOrders(
+      List<PendingOrder> local, List<PendingOrder> server) {
+    final Map<String, PendingOrder> merged = {};
+
+    // Server ustun
+    for (final s in server) {
+      merged[s.id] = s;
+    }
+
+    // Local qo‘shiladi, agar serverda yo‘q bo‘lsa
+    for (final l in local) {
+      if (l.id.isNotEmpty && !merged.containsKey(l.id)) {
+        merged[l.id] = l;
+      } else if (l.id.isEmpty) {
+        // Agar localda id bo‘sh bo‘lsa, vaqtinchalik uniq id qo‘shib qo‘yamiz
+        merged["local_${DateTime.now().microsecondsSinceEpoch}"] = l;
+      }
+    }
+
+    return merged.values.toList();
   }
 
   Future<bool> closeOrderFast(
@@ -611,6 +742,32 @@ class _FastUnifiedPendingPaymentsPageState
       return false;
     } catch (e) {
       debugPrint('Error closing order: $e');
+      return false;
+    }
+  }
+  Future<bool> processPaymentLocal(
+      PendingOrder order,
+      String paymentMethod,
+      double paymentAmount,
+      ) async {
+    try {
+      final db = await DBHelper.database;
+      await db.update(
+        'orders',
+        {
+          'status': 'paid',
+          'payment_method': paymentMethod,
+          'payment_amount': paymentAmount,
+          'is_synced': 0,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        where: 'id = ?',
+        whereArgs: [order.id],
+      );
+      debugPrint("💰 To‘lov localda yozildi: ${order.id}, $paymentMethod, $paymentAmount");
+      return true;
+    } catch (e, st) {
+      debugPrint("❌ processPaymentLocal xato: $e\n$st");
       return false;
     }
   }
@@ -774,12 +931,7 @@ class _FastUnifiedPendingPaymentsPageState
     }
   }
 
-  @override
-  void dispose() {
-    _disposed = true;
-    _refreshTimer?.cancel();
-    super.dispose();
-  }
+
 
   void _handleDateRangeChange(String key) {
     if (_disposed) return;
@@ -868,6 +1020,7 @@ class _FastUnifiedPendingPaymentsPageState
     }
   }
 
+// REPLACE _handleCloseOrder() with:
   Future<void> _handleCloseOrder() async {
     if (selectedOrder == null) {
       _showSnackBar('Avval zakazni tanlang!');
@@ -875,24 +1028,29 @@ class _FastUnifiedPendingPaymentsPageState
     }
 
     setState(() => isLoading = true);
+    try {
+      // 1) Localga saqlab (agar saqlanmagan bo‘lsa) va yopish
+      // 1.1) ixtiyoriy: serverdan kelgan obyektni localga "upsert"
+      // Agar PendingOrder.toJson() bo'lmasa, o'zingiz xarita tuzib yuboring.
+      // await DBHelper.upsertOrderFromPendingJson(selectedOrder!.toJson());
 
-    final success = await closeOrderFast(
-      selectedOrder!.id,
-      selectedOrder!.items,
-    );
+      // 1.2) localda yopish
+      await DBHelper.closeOrderLocal(selectedOrder!.id);
 
-    if (!_disposed) {
+      // 2) UI ni darhol ko‘chirish
       setState(() {
+        openOrders.removeWhere((o) => o.id == selectedOrder!.id);
+        closedOrders.insert(0, selectedOrder!);
         isLoading = false;
-        if (success) {
-          openOrders.removeWhere((order) => order.id == selectedOrder!.id);
-          selectedOrder = null;
-        } else {
-          _showSnackBar('Failed to close order');
-        }
       });
-      // Background refresh
+
+      _showSnackBar('✅ Zakaz localda yopildi. Sync navbatda.');
+
+      // 3) fon yangilash
       unawaited(_refreshData());
+    } catch (e) {
+      setState(() => isLoading = false);
+      _showSnackBar('❌ Zakazni yopishda xato: $e');
     }
   }
 
@@ -904,17 +1062,215 @@ class _FastUnifiedPendingPaymentsPageState
     setState(() => isPaymentModalVisible = true);
   }
 
-  Future<Map<String, dynamic>> _processPaymentHandler(
-      Map<String, dynamic> apiPayload,
-      ) async {
-    setState(() => isLoading = true);
-    final result = await processPaymentFast(
-      selectedOrder!.id,
-      apiPayload['paymentData'] as Map<String, dynamic>,
-    );
-    if (!_disposed) setState(() => isLoading = false);
-    return result;
+  // ADD these methods inside _FastUnifiedPendingPaymentsPageState:
+
+  Future<void> _syncAll(String token) async {
+    await _syncClosedOrders(token);
+    await _syncPaidOrders(token);
   }
+
+// 1) YOPILGAN, lekin serverga yuborilmagan zakazlar
+  Future<void> _syncClosedOrders(String token) async {
+    try {
+      final db = await DBHelper.database;
+      final rows = await db.query(
+        'orders',
+        where: "status = 'closed' AND is_synced = 0",
+        orderBy: 'datetime(updated_at) ASC',
+        limit: 50,
+      );
+
+      for (final r in rows) {
+        final localId  = r['id'].toString();
+        final serverId = (r['server_id'] ?? '').toString();
+
+        if (serverId.isEmpty || serverId == 'null') {
+          debugPrint('⏭️ [SYNC CLOSE] skip $localId: server_id yo‘q (avval create sync kerak)');
+          continue; // <-- muhim
+        }
+
+        try {
+          final resp = await http
+              .put(
+            Uri.parse('${ApiConfig.baseUrl}/orders/close/$serverId'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+          )
+              .timeout(const Duration(seconds: 10));
+
+          if (resp.statusCode >= 200 && resp.statusCode < 300) {
+            await db.update('orders', {'is_synced': 1}, where: 'id = ?', whereArgs: [localId]);
+            debugPrint('✅ [SYNC CLOSE] OK: local=$localId -> server=$serverId');
+          } else {
+            debugPrint('❌ [SYNC CLOSE] $localId -> ${resp.statusCode}: ${resp.body}');
+          }
+        } catch (e) {
+          debugPrint('🌐 [SYNC CLOSE] offline: $e');
+        }
+      }
+    } catch (e, st) {
+      debugPrint('❌ _syncClosedOrders xato: $e\n$st');
+    }
+  }
+
+  Future<void> _syncPaidOrders(String token) async {
+    try {
+      final db = await DBHelper.database;
+      final rows = await db.query(
+        'orders',
+        where: "status = 'paid' AND is_synced = 0",
+        orderBy: 'datetime(updated_at) ASC',
+        limit: 50,
+      );
+
+      for (final r in rows) {
+        final localId  = r['id'].toString();
+        final serverId = (r['server_id'] ?? '').toString();
+
+        if (serverId.isEmpty || serverId == 'null') {
+          debugPrint('⏭️ [SYNC PAY] skip $localId: server_id yo‘q (avval create sync kerak)');
+          continue; // <-- muhim
+        }
+
+        final method  = (r['payment_method'] ?? 'cash').toString();
+        final amount  = ((r['payment_amount'] ?? 0) as num).toDouble();
+
+        final body = {
+          "paymentMethod": method,
+          "paymentAmount": amount,
+          "orderId": serverId, // ← diqqat: serverga ham server_id boradi
+        };
+
+        try {
+          final resp = await http
+              .post(
+            Uri.parse('${ApiConfig.baseUrl}/kassir/payment/$serverId'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(body),
+          )
+              .timeout(const Duration(seconds: 12));
+
+          if (resp.statusCode >= 200 && resp.statusCode < 300) {
+            await db.update('orders', {'is_synced': 1}, where: 'id = ?', whereArgs: [localId]);
+            debugPrint('✅ [SYNC PAY] OK: local=$localId -> server=$serverId');
+          } else {
+            debugPrint('❌ [SYNC PAY] $localId -> ${resp.statusCode}: ${resp.body}');
+          }
+        } catch (e) {
+          debugPrint('🌐 [SYNC PAY] offline: $e');
+        }
+      }
+    } catch (e, st) {
+      debugPrint('❌ _syncPaidOrders xato: $e\n$st');
+    }
+  }
+
+  Future<void> _syncNewOrders(String token) async {
+    try {
+      final db = await DBHelper.database;
+      final rows = await db.query(
+        'orders',
+        where: "(server_id IS NULL OR server_id = '') AND is_synced = 0",
+        limit: 50,
+      );
+
+      for (final r in rows) {
+        final localId = r['id'].toString();
+        final tableId = (r['table_id'] ?? '').toString();
+        final items   = await db.query('order_items', where: 'order_id = ?', whereArgs: [localId]);
+
+        // Payloadni backend talabiga moslang:
+        final payload = {
+          "table_id": tableId,
+          "items": items.map((it) => {
+            "food_id": it['food_id'],
+            "quantity": it['quantity'],
+            "price": it['price'],
+            // kerak bo‘lsa qo‘shimcha maydonlar
+          }).toList(),
+          // kerak bo‘lsa waiter, device, extId va h.k.
+        };
+
+        try {
+          // TODO: endpoint nomini aniq joyingizga moslang:
+          final resp = await http
+              .post(
+            Uri.parse('${ApiConfig.baseUrl}/orders'), // masalan
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(payload),
+          )
+              .timeout(const Duration(seconds: 12));
+
+          if (resp.statusCode >= 200 && resp.statusCode < 300) {
+            final data = jsonDecode(resp.body);
+            final serverId = (data['_id'] ?? data['order']?['_id'] ?? '').toString();
+            if (serverId.isNotEmpty) {
+              await DBHelper.updateOrderServerId(localId, serverId);
+              debugPrint('✅ [SYNC CREATE] local=$localId -> server=$serverId');
+            } else {
+              debugPrint('❓ [SYNC CREATE] $localId: javobda _id yo‘q');
+            }
+          } else {
+            debugPrint('❌ [SYNC CREATE] $localId -> ${resp.statusCode}: ${resp.body}');
+          }
+        } catch (e) {
+          debugPrint('🌐 [SYNC CREATE] offline: $e');
+        }
+      }
+    } catch (e, st) {
+      debugPrint('❌ _syncNewOrders xato: $e\n$st');
+    }
+  }
+
+
+  Future<Map<String, dynamic>> _processPaymentHandler(Map<String, dynamic> apiPayload) async {
+    if (selectedOrder == null) {
+      return {'success': false, 'message': 'Zakaz tanlanmagan'};
+    }
+
+    final pd = apiPayload['paymentData'] as Map<String, dynamic>;
+    final String method = (pd['paymentMethod'] ?? 'cash').toString();
+
+    double amount = 0;
+    if (method == 'mixed') {
+      final mixed = (pd['mixedPayment'] as Map<String, dynamic>?);
+      amount = ((mixed?['totalAmount'] ?? 0) as num).toDouble();
+    } else {
+      amount = ((pd['paymentAmount'] ?? 0) as num).toDouble();
+    }
+
+    if (amount <= 0) {
+      return {'success': false, 'message': "To'lov summasi noto‘g‘ri"};
+    }
+
+    setState(() => isLoading = true);
+    try {
+      // DBHelper dagi mavjud (non-static) helperdan foydalanamiz
+      final ok = await DBHelper().processPaymentLocal(selectedOrder!, method, amount);
+
+      setState(() => isLoading = false);
+
+      if (ok) {
+        // UI: to‘lov qilingan buyurtmani ro‘yxatdan chiqarib yuboramiz
+        closedOrders.removeWhere((o) => o.id == selectedOrder!.id);
+        return {'success': true, 'message': "To'lov localga yozildi. Sync navbatda."};
+      } else {
+        return {'success': false, 'message': "Local yozishda xatolik"};
+      }
+    } catch (e) {
+      setState(() => isLoading = false);
+      return {'success': false, 'message': "Local to'lov xatosi: $e"};
+    }
+  }
+
 
   void _handlePaymentSuccess(Map<String, dynamic> result) {
     if (_disposed || selectedOrder == null) return;

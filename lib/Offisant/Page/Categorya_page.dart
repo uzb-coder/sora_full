@@ -46,9 +46,15 @@ class Category {
       printerIp = printer['ip']?.toString() ?? '';
     } else {
       // 🔰 Local DB formatida printer alohida maydonlarda bo‘lishi mumkin
-      printerId = json['printer_id']?.toString() ?? (json['printerId']?.toString() ?? '');
-      printerName = json['printer_name']?.toString() ?? (json['printerName']?.toString() ?? '');
-      printerIp = json['printer_ip']?.toString() ?? (json['printerIp']?.toString() ?? '');
+      printerId =
+          json['printer_id']?.toString() ??
+          (json['printerId']?.toString() ?? '');
+      printerName =
+          json['printer_name']?.toString() ??
+          (json['printerName']?.toString() ?? '');
+      printerIp =
+          json['printer_ip']?.toString() ??
+          (json['printerIp']?.toString() ?? '');
     }
 
     final rawSubs = json['subcategories'];
@@ -58,26 +64,31 @@ class Category {
       try {
         final decoded = jsonDecode(rawSubs);
         if (decoded is List) {
-          subs = decoded
-              .map((e) => (e is Map ? e['title']?.toString() : e.toString()))
-              .where((s) => s != null && s.isNotEmpty)
-              .cast<String>()
-              .toList();
+          subs =
+              decoded
+                  .map(
+                    (e) => (e is Map ? e['title']?.toString() : e.toString()),
+                  )
+                  .where((s) => s != null && s.isNotEmpty)
+                  .cast<String>()
+                  .toList();
         }
       } catch (e) {
         subs = [];
       }
     } else if (rawSubs is List) {
       if (rawSubs.isNotEmpty && rawSubs.first is Map<String, dynamic>) {
-        subs = rawSubs
-            .map((e) => (e['title']?.toString() ?? '').trim())
-            .where((s) => s.isNotEmpty)
-            .toList();
+        subs =
+            rawSubs
+                .map((e) => (e['title']?.toString() ?? '').trim())
+                .where((s) => s.isNotEmpty)
+                .toList();
       } else {
-        subs = rawSubs
-            .map((e) => (e?.toString() ?? '').trim())
-            .where((s) => s.isNotEmpty)
-            .toList();
+        subs =
+            rawSubs
+                .map((e) => (e?.toString() ?? '').trim())
+                .where((s) => s.isNotEmpty)
+                .toList();
       }
     }
 
@@ -104,10 +115,10 @@ class OrderScreenContent extends StatefulWidget {
 
   const OrderScreenContent({
     super.key,
-    this.tableId,
+    required this.tableId, // ✅ majburiy
+    this.tableName,
     required this.user,
     this.onOrderCreated,
-    this.tableName,
     required this.token,
     this.isAddingToExistingOrder = false,
     this.existingOrderId,
@@ -142,16 +153,123 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
   @override
   void initState() {
     super.initState();
-    _initializeAppFast();
-
+    // _initializeAppFast();
     _initializeToken().then((_) async {
-      await _syncAndSaveToLocal(); // serverdan olib localga yozamiz
-      await _loadCategoriesAndFoodsFromLocal(); // localdan yuklaymiz
-      _startAutoSync(); // har 1 soatda sync
+      // 1️⃣ Avval localni tekshiramiz
+      final cats = await CategoryLocalService.getCategories();
+      final foods = await FoodLocalService.getAllFoods();
+
+      if (cats.isEmpty || foods.isEmpty) {
+        // ❌ Local bo‘sh → bir marta serverdan olib kelamiz
+        await _syncAndSaveToLocal();
+      }
+
+      // 2️⃣ Har doim localdan yuklaymiz (UI uchun)
+      await _loadCategoriesAndFoodsFromLocal();
+
+      // 3️⃣ Har 1 soatda yangilab turish
+      _startAutoSync();
+
+      // 4️⃣ Offline zakazlarni sync qilish
+      _startOrderSync();
     });
   }
 
-  /// 🔹 Localdan yuklash
+  Future<void> _saveOrderToLocal() async {
+    if (_cart.isEmpty) return;
+
+    final orderId = DateTime.now().millisecondsSinceEpoch.toString();
+
+    final orderData = {
+      'id': orderId,
+      'table_id': widget.tableId,
+      'user_id': widget.user.id,
+      'waiter_name': widget.user.firstName,
+      'total_price': _calculateTotal(),
+      'status': 'pending', // 🔴 hali serverga yuborilmagan
+      'created_at': DateTime.now().toIso8601String(),
+      'formatted_order_number': widget.formatted_order_number,
+    };
+
+    final items =
+        _cart.entries
+            .map((e) {
+              final product = _findProductById(e.key);
+              if (product == null) return null;
+
+              return {
+                'order_id': orderId,
+                'food_id': e.key,
+                'name': product.name,
+                'quantity': e.value['quantity'],
+                'price': product.price,
+                'category_name': product.categoryName ?? '',
+              };
+            })
+            .where((e) => e != null)
+            .cast<Map<String, dynamic>>()
+            .toList();
+
+    await DBHelper.insertOrder(orderData, items);
+  }
+
+  void _startOrderSync() {
+    Timer.periodic(const Duration(hours: 1), (timer) async {
+      print("🔄 Offline zakazlarni sync qilish boshlandi...");
+      final unsyncedOrders = await DBHelper.getUnsyncedOrders();
+
+      for (final order in unsyncedOrders) {
+        final orderId = order['id'];
+
+        // Order items olish
+        final db = await DBHelper.database;
+        final items = await db.query(
+          'order_items',
+          where: 'order_id = ?',
+          whereArgs: [orderId],
+        );
+
+        final orderData = {
+          'table_id': order['table_id'],
+          'user_id': order['user_id'],
+          'first_name': order['waiter_name'],
+          'items':
+              items
+                  .map(
+                    (e) => {'food_id': e['food_id'], 'quantity': e['quantity']},
+                  )
+                  .toList(),
+          'total_price': order['total_price'],
+          'kassir_workflow': true,
+          'table_number': widget.tableName ?? 'N/A',
+        };
+
+        try {
+          final response = await http.post(
+            Uri.parse("${ApiConfig.baseUrl}/orders/create"),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $_token',
+            },
+            body: jsonEncode(orderData),
+          );
+
+          if (response.statusCode == 200 || response.statusCode == 201) {
+            await DBHelper.markOrderAsSynced(orderId);
+            print(
+              "✅ Zakaz serverga yuborildi va synced qilindi (id: $orderId)",
+            );
+          } else {
+            print("⚠️ Server xatosi: ${response.body}");
+          }
+        } catch (e) {
+          print("❌ Sync error: $e");
+        }
+      }
+      print("🔄 Offline sync tugadi");
+    });
+  }
+
   Future<void> _loadCategoriesAndFoodsFromLocal() async {
     try {
       print("📦 Local DB dan kategoriyalar olinmoqda...");
@@ -168,7 +286,9 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         _categoriesLoaded = true;
       });
 
-      print("✅ Localdan yuklash tugadi. Kategoriya: ${_categories.length}, Mahsulot: ${_allProducts.length}");
+      print(
+        "✅ Localdan yuklash tugadi. Kategoriya: ${_categories.length}, Mahsulot: ${_allProducts.length}",
+      );
     } catch (e) {
       print("❌ Local yuklashda xato: $e");
     }
@@ -203,8 +323,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         await DBHelper.clearCategories();
         await DBHelper.upsertCategories(cats.cast<Map<String, dynamic>>());
         print("✅ ${cats.length} ta kategoriya localga saqlandi");
-      } else {
-        print("⚠️ Kategoriya sync xato: ${catRes.statusCode}");
       }
 
       print("🌍 Serverdan mahsulotlar yuklanmoqda...");
@@ -219,14 +337,11 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         await DBHelper.clearFoods();
         await DBHelper.upsertFoods(foods.cast<Map<String, dynamic>>());
         print("✅ ${foods.length} ta mahsulot localga saqlandi");
-      } else {
-        print("⚠️ Mahsulot sync xato: ${foodRes.statusCode}");
       }
     } catch (e) {
       print("❌ Sync xatolik: $e");
     }
   }
-
 
   Future<void> syncCategoriesAndFoods(String token) async {
     try {
@@ -240,7 +355,9 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         final data = jsonDecode(catRes.body);
         final List cats = data['categories'] ?? [];
         await CategoryLocalService.clearCategories();
-        await CategoryLocalService.saveCategories(cats.cast<Map<String, dynamic>>());
+        await CategoryLocalService.saveCategories(
+          cats.cast<Map<String, dynamic>>(),
+        );
       }
 
       final foodRes = await http.get(
@@ -336,7 +453,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         setState(() {
           _categoriesLoaded = true;
         });
-        return;
+        return; // ✅ agar memory cache ishlasa, qaytib ketadi
       }
 
       // API dan kategoriyalarni olish
@@ -344,25 +461,34 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
 
       final response = await http
           .get(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${_token ?? widget.token}',
-        },
-      )
-          .timeout(Duration(seconds: 2)); // Qisqa timeout
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${_token ?? widget.token}',
+            },
+          )
+          .timeout(const Duration(seconds: 2)); // Qisqa timeout
       print(response.body);
+
       if (response.statusCode == 200) {
         final dynamic decoded = json.decode(response.body);
 
         List<Category> categories = [];
+        List<Map<String, dynamic>> categoryMaps = [];
+
         if (decoded is Map<String, dynamic>) {
           final data = decoded['categories'] ?? decoded['data'] ?? decoded;
           if (data is List) {
             categories = data.map((e) => Category.fromJson(e)).toList();
+            categoryMaps = List<Map<String, dynamic>>.from(data);
+            // ✅ SQLlite ga yozib qo‘yish
+            if (categoryMaps.isNotEmpty) {
+              await CategoryLocalService.saveCategories(categoryMaps);
+            }
           }
         } else if (decoded is List) {
           categories = decoded.map((e) => Category.fromJson(e)).toList();
+          categoryMaps = List<Map<String, dynamic>>.from(decoded);
         }
 
         // Cache ga saqlash
@@ -403,12 +529,12 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
 
       final response = await http
           .get(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ${_token ?? widget.token}',
-        },
-      )
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${_token ?? widget.token}',
+            },
+          )
           .timeout(Duration(seconds: 5));
 
       if (response.statusCode == 200) {
@@ -418,9 +544,9 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         if (decoded is Map<String, dynamic>) {
           final data =
               decoded['foods'] ??
-                  decoded['data'] ??
-                  decoded['products'] ??
-                  decoded;
+              decoded['data'] ??
+              decoded['products'] ??
+              decoded;
           if (data is List) {
             products = data.map((e) => Ovqat.fromJson(e)).toList();
           }
@@ -466,16 +592,16 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       if (filtered.isNotEmpty && _selectedCategoryId == null) {
         final firstProduct = filtered.first;
         final matchedCategory = _categories.firstWhere(
-              (cat) => cat.id == firstProduct.categoryId,
+          (cat) => cat.id == firstProduct.categoryId,
           orElse:
               () => Category(
-            id: '',
-            title: '',
-            subcategories: [],
-            printerName: '',
-            printerIp: '',
-            printerId: '',
-          ),
+                id: '',
+                title: '',
+                subcategories: [],
+                printerName: '',
+                printerIp: '',
+                printerId: '',
+              ),
         );
 
         if (matchedCategory.id.isNotEmpty) {
@@ -519,10 +645,10 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
   }
 
   void _selectCategory(
-      String categoryId,
-      String categoryTitle, {
-        String? subcategory,
-      }) {
+    String categoryId,
+    String categoryTitle, {
+    String? subcategory,
+  }) {
     setState(() {
       _selectedCategoryId = categoryId;
       _selectedCategoryName = categoryTitle;
@@ -576,21 +702,101 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     setState(() => _isSubmitting = true);
 
     try {
-      final result = await _sendOrderInBackground();
+      // 1️⃣ Localga saqlash
+      final orderId = DateTime.now().millisecondsSinceEpoch.toString();
 
-      if (result['success'] == true) {
-        if (mounted) {
-          _showSuccess(result['message'] ?? 'Zakaz muvaffaqiyatli yuborildi!');
-          widget.onOrderCreated?.call();
-          Navigator.of(context).pop(); // ✅ darhol yopiladi
-        }
-      } else {
-        if (mounted) {
-          _showError(result['message'] ?? 'Zakaz yuborishda xatolik');
-        }
-      }
+      final order = {
+        'id': orderId,
+        'table_id': widget.tableId,
+        'user_id': widget.user.id,
+        'waiter_name': widget.user.firstName,
+        'total_price': _calculateTotal(),
+        'status': 'pending',
+        'created_at': DateTime.now().toIso8601String(),
+        'formatted_order_number': widget.formatted_order_number,
+      };
+
+      final items =
+          _cart.entries.map((e) {
+            final product = _findProductById(e.key);
+            return {
+              'order_id': orderId,
+              'food_id': product?.id ?? '',
+              'name': product?.name ?? '',
+              'quantity': e.value['quantity'],
+              'price': product?.price,
+              'category_name': product?.categoryName ?? '',
+            };
+          }).toList();
+
+      await DBHelper.insertOrder(order, items);
+
+      // ✅ Printerga yuborish
+      _printOrderOffline({
+        'orderNumber': widget.formatted_order_number,
+        'waiter_name': widget.user.firstName,
+        'table_name': widget.tableName,
+        'items': items,
+      });
+
+      // ✅ UI yangilanishi uchun localdan qayta yuklash
+      final updatedOrders = await DBHelper.getOrdersByTable(widget.tableId!);
+      print(
+        "📦 Local DB dan ${updatedOrders.length} ta zakaz olindi va UI yangilandi",
+      );
+
+      widget.onOrderCreated?.call(); // PosScreen ham qayta chaqiradi
+
+      if (mounted) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _printOrderOffline(Map<String, dynamic> data) async {
+    try {
+      final Map<String, List<Map<String, dynamic>>> printerGroups = {};
+
+      for (final entry in _cart.entries) {
+        final product = _findProductById(entry.key);
+        if (product != null) {
+          final category = _categories.firstWhere(
+            (cat) => cat.id == product.categoryId,
+            orElse:
+                () => Category(
+                  id: '',
+                  title: '',
+                  subcategories: [],
+                  printerName: '',
+                  printerIp: '',
+                  printerId: '',
+                ),
+          );
+          if (category.printerIp.isNotEmpty && category.printerIp != 'null') {
+            printerGroups.putIfAbsent(category.printerIp, () => []);
+            printerGroups[category.printerIp]!.add({
+              'name': product.name,
+              'qty': entry.value['quantity'],
+              'kg': product.unit == 'kg' ? entry.value['kg'] : null,
+            });
+          }
+        }
+      }
+
+      printerGroups.forEach((ip, items) {
+        final printData = {
+          'orderNumber': data['orderNumber'],
+          'waiter_name': data['waiter_name'],
+          'table_name': data['table_name'],
+          'items': items,
+        };
+        final bytes = _createPrintData(printData);
+        _printToSocket(ip, bytes).catchError((e) {
+          debugPrint("⚠️ Offline print xato ($ip): $e");
+        });
+      });
+    } catch (e) {
+      debugPrint("❌ Offline print error: $e");
     }
   }
 
@@ -601,30 +807,44 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         return {'success': false, 'message': 'Savat bo‘sh'};
       }
       if (_token == null) {
-        return {'success': false, 'message': 'Token topilmadi'};
+        await _initializeToken(); // Tokenni qayta olish
+        if (_token == null) {
+          return {'success': false, 'message': 'Token topilmadi'};
+        }
+      }
+      if (widget.user.id == null || widget.user.id.isEmpty) {
+        return {'success': false, 'message': 'Afitsant ID topilmadi'};
       }
 
-      final orderItems = _cart.entries.map((e) {
-        final product = _findProductById(e.key);
-        if (product == null) return null;
+      final orderItems =
+          _cart.entries
+              .map((e) {
+                final product = _findProductById(e.key);
+                if (product == null) return null;
 
-        final quantity = product.unit == 'kg'
-            ? e.value['quantity']
-            : (e.value['quantity'] as num).toInt();
+                final quantity =
+                    product.unit == 'kg'
+                        ? e.value['quantity']
+                        : (e.value['quantity'] as num).toInt();
 
-        if (quantity <= 0) return null;
-        return {'food_id': e.key, 'quantity': quantity};
-      }).where((item) => item != null).toList();
+                if (quantity <= 0) return null;
+                return {'food_id': e.key, 'quantity': quantity};
+              })
+              .where((item) => item != null)
+              .toList();
 
       final orderData = {
         'table_id': widget.tableId,
-        'user_id': widget.user.id,
+        'user_id': widget.user.id, // Afitsant ID
         'first_name': widget.user.firstName ?? 'Noma\'lum',
         'items': orderItems,
         'total_price': _calculateTotal(),
         'kassir_workflow': true,
         'table_number': widget.tableName ?? 'N/A',
       };
+
+      // So‘rovni yuborishdan oldin orderData ni chop etish
+      debugPrint('Order Data: ${jsonEncode(orderData)}');
 
       final response = await http.post(
         Uri.parse("${ApiConfig.baseUrl}/orders/create"),
@@ -638,22 +858,32 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        // ✅ Printerni backgroundda yuboramiz
+        // Printerni backgroundda yuborish
         Future.microtask(() => _printOrderAsync(data));
         return {'success': true, 'message': 'Zakaz muvaffaqiyatli yuborildi!'};
       } else {
-        return {'success': false, 'message': data['message'] ?? 'Server xatosi'};
+        debugPrint('Server xatosi: ${response.statusCode} - ${response.body}');
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Server xatosi',
+        };
       }
     } catch (e) {
-      return {'success': false, 'message': 'Xatolik: $e'};
+      debugPrint('Xatolik: $e');
+      // Offline rejimda localga saqlash
+      await _saveOrderToLocal();
+      return {
+        'success': false,
+        'message': 'Internet aloqasi yo‘q, zakaz localga saqlandi: $e',
+      };
     }
   }
 
   void showCenterSnackBar(
-      BuildContext context,
-      String message, {
-        Color color = Colors.green,
-      }) {
+    BuildContext context,
+    String message, {
+    Color color = Colors.green,
+  }) {
     showTopSnackBar(
       Overlay.of(context),
       Material(
@@ -688,34 +918,46 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
 
   Future<Map<String, dynamic>> _sendAddItemsInBackground() async {
     try {
-      final orderItems = _cart.entries.map((e) {
-        final product = _findProductById(e.key);
-        if (product == null) return null;
+      final orderItems =
+          _cart.entries
+              .map((e) {
+                final product = _findProductById(e.key);
+                if (product == null) return null;
 
-        final quantity = product.unit == 'kg'
-            ? e.value['quantity']
-            : (e.value['quantity'] as num).toInt();
+                final quantity =
+                    product.unit == 'kg'
+                        ? e.value['quantity']
+                        : (e.value['quantity'] as num).toInt();
 
-        if (quantity <= 0) return null;
-        return {'food_id': e.key, 'quantity': quantity};
-      }).where((item) => item != null).toList();
+                if (quantity <= 0) return null;
+                return {'food_id': e.key, 'quantity': quantity};
+              })
+              .where((item) => item != null)
+              .toList();
 
       final response = await http.post(
-        Uri.parse("${ApiConfig.baseUrl}/orders/${widget.existingOrderId}/add-items"),
+        Uri.parse(
+          "${ApiConfig.baseUrl}/orders/${widget.existingOrderId}/add-items",
+        ),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${widget.token}',
         },
         body: jsonEncode({'items': orderItems}),
       );
-
+      print("${ApiConfig.baseUrl}/orders/${widget.existingOrderId}/add-items");
+      print("${widget.token}");
+      print(orderItems.toString());
       final data = jsonDecode(response.body);
-
+      print(response.body);
       if (response.statusCode == 200 || response.statusCode == 201) {
         Future.microtask(() => _printAddedItemsOptimized(data));
         return {'success': true, 'message': 'Mahsulotlar qo‘shildi!'};
       } else {
-        return {'success': false, 'message': data['message'] ?? 'Server xatosi'};
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Server xatosi',
+        };
       }
     } catch (e) {
       return {'success': false, 'message': 'Xatolik: $e'};
@@ -729,8 +971,16 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         final product = _findProductById(entry.key);
         if (product != null) {
           final category = _categories.firstWhere(
-                (cat) => cat.id == product.categoryId,
-            orElse: () => Category(id: '', title: '', subcategories: [], printerName: '', printerIp: '', printerId: ''),
+            (cat) => cat.id == product.categoryId,
+            orElse:
+                () => Category(
+                  id: '',
+                  title: '',
+                  subcategories: [],
+                  printerName: '',
+                  printerIp: '',
+                  printerId: '',
+                ),
           );
           if (category.printerIp.isNotEmpty && category.printerIp != 'null') {
             printerGroups.putIfAbsent(category.printerIp, () => []);
@@ -746,7 +996,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       // Fire-and-forget → kutilmaydi
       printerGroups.forEach((ip, items) {
         final printData = {
-          'orderNumber': responseData['order']?['orderNumber']?.toString() ?? '',
+          'orderNumber':
+              responseData['order']?['orderNumber']?.toString() ?? '',
           'waiter_name': widget.user.firstName ?? 'Noma\'lum',
           'table_name': widget.tableName ?? 'N/A',
           'items': items,
@@ -761,15 +1012,25 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     }
   }
 
-  Future<void> _printAddedItemsOptimized(Map<String, dynamic> responseData) async {
+  Future<void> _printAddedItemsOptimized(
+    Map<String, dynamic> responseData,
+  ) async {
     try {
       final Map<String, List<Map<String, dynamic>>> printerGroups = {};
       for (final entry in _cart.entries) {
         final product = _findProductById(entry.key);
         if (product != null) {
           final category = _categories.firstWhere(
-                (cat) => cat.id == product.categoryId,
-            orElse: () => Category(id: '', title: '', subcategories: [], printerName: '', printerIp: '', printerId: ''),
+            (cat) => cat.id == product.categoryId,
+            orElse:
+                () => Category(
+                  id: '',
+                  title: '',
+                  subcategories: [],
+                  printerName: '',
+                  printerIp: '',
+                  printerId: '',
+                ),
           );
           if (category.printerIp.isNotEmpty && category.printerIp != 'null') {
             printerGroups.putIfAbsent(category.printerIp, () => []);
@@ -799,6 +1060,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       debugPrint("❌ Print error: $e");
     }
   }
+
   // Muvaffaqiyat xabarini ko‘rsatish uchun yangi metod
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -821,7 +1083,11 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     try {
       print('Printerga ulanmoqda: $ip:9100');
 
-      final socket = await Socket.connect(ip, 9100, timeout: Duration(milliseconds: 500));
+      final socket = await Socket.connect(
+        ip,
+        9100,
+        timeout: Duration(milliseconds: 500),
+      );
       socket.add(data);
       await socket.flush();
 
@@ -846,13 +1112,14 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     bytes.addAll(_encodeText('ZAKAZ : ${widget.formatted_order_number}\r\n'));
     bytes.addAll(_encodeText('Ofitsiant: $waiter\r\n'));
     bytes.addAll(_encodeText('Stol: $table\r\n'));
-    bytes.addAll(_encodeText(
-        '${DateTime.now().toString().substring(11, 16)}\r\n'));
+    bytes.addAll(
+      _encodeText('${DateTime.now().toString().substring(11, 16)}\r\n'),
+    );
     bytes.addAll(_encodeText('=' * 32 + '\r\n'));
 
-    final header = 'Nomi'.padRight(20) + 'Soni';
+    final header = '${'Nomi'.padRight(20)}Soni';
     bytes.addAll([0x1B, 0x61, 1]); // Markaz
-    bytes.addAll(_encodeText(header + '\r\n'));
+    bytes.addAll(_encodeText('$header\r\n'));
     bytes.addAll(_encodeText('-' * 32 + '\r\n'));
 
     for (final item in data['items']) {
@@ -861,7 +1128,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       final line = name.padRight(20) + qty;
 
       bytes.addAll([0x1B, 0x61, 0]); // Chapga
-      bytes.addAll(_encodeText(line + '\r\n'));
+      bytes.addAll(_encodeText('$line\r\n'));
 
       // ✏️ Agar izoh mavjud bo‘lsa, uni chiqaramiz
       final note = _cart[item['id']]?['note'] ?? '';
@@ -899,16 +1166,17 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
 
     final selectedCategory =
         _categories.cast<Category?>().firstWhere(
-              (cat) => cat?.id == _selectedCategoryId,
+          (cat) => cat?.id == _selectedCategoryId,
           orElse: () => null,
         ) ??
-            Category(
-              id: '',
-              title: 'Kategoriyani tanlang',
-              subcategories: [],
-              printerName: '',
-              printerIp: '', printerId: '',
-            );
+        Category(
+          id: '',
+          title: 'Kategoriyani tanlang',
+          subcategories: [],
+          printerName: '',
+          printerIp: '',
+          printerId: '',
+        );
 
     return Scaffold(
       backgroundColor: Color(0xFFDFF3E3),
@@ -1104,54 +1372,54 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
           ),
           Expanded(
             child:
-            _isLoading
-                ? const Center(
-              child: CircularProgressIndicator(
-                color: AppColors.primary,
-              ),
-            )
-                : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _categories.length,
-              itemBuilder: (context, index) {
-                final category = _categories[index];
-                return Card(
-                  color: Color(0xFF144D37),
-                  margin: const EdgeInsets.only(bottom: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    side: BorderSide(
-                      color:
-                      _selectedCategoryId == category.id
-                          ? AppColors.primary
-                          : AppColors.lightGrey,
-                      width: _selectedCategoryId == category.id ? 2 : 1,
-                    ),
-                  ),
-                  child: ListTile(
-                    leading: Icon(
-                      _getCategoryIcon(category.title),
-                      size: 18,
-                      color: Colors.white,
-                    ),
-                    title: Text(
-                      category.title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                _isLoading
+                    ? const Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.primary,
                       ),
-                      overflow: TextOverflow.ellipsis,
+                    )
+                    : ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _categories.length,
+                      itemBuilder: (context, index) {
+                        final category = _categories[index];
+                        return Card(
+                          color: Color(0xFF144D37),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(
+                              color:
+                                  _selectedCategoryId == category.id
+                                      ? AppColors.primary
+                                      : AppColors.lightGrey,
+                              width: _selectedCategoryId == category.id ? 2 : 1,
+                            ),
+                          ),
+                          child: ListTile(
+                            leading: Icon(
+                              _getCategoryIcon(category.title),
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                            title: Text(
+                              category.title,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onTap:
+                                () => _selectCategory(
+                                  category.id,
+                                  category.title,
+                                ),
+                          ),
+                        );
+                      },
                     ),
-                    onTap:
-                        () => _selectCategory(
-                      category.id,
-                      category.title,
-                    ),
-                  ),
-                );
-              },
-            ),
           ),
         ],
       ),
@@ -1159,10 +1427,10 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
   }
 
   Widget _buildProductsSection(
-      bool isDesktop,
-      bool isTablet,
-      Category selectedCategory,
-      ) {
+    bool isDesktop,
+    bool isTablet,
+    Category selectedCategory,
+  ) {
     return Container(
       margin: const EdgeInsets.only(right: 16),
       decoration: BoxDecoration(
@@ -1209,8 +1477,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
               ],
             ),
           ),
-          if (selectedCategory.subcategories != null &&
-              selectedCategory.subcategories.isNotEmpty)
+          if (selectedCategory.subcategories.isNotEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Column(
@@ -1223,14 +1490,12 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                       children: [
                         _buildSubcategoryChip(null, 'Barchasi'),
                         const SizedBox(width: 8),
-                        ...selectedCategory.subcategories
-                            .map(
-                              (sub) => Padding(
+                        ...selectedCategory.subcategories.map(
+                          (sub) => Padding(
                             padding: const EdgeInsets.only(right: 8),
                             child: _buildSubcategoryChip(sub, sub),
                           ),
-                        )
-                            .toList(),
+                        ),
                       ],
                     ),
                   ),
@@ -1241,34 +1506,35 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child:
-              _isLoading
-                  ? const Center(
-                child: CircularProgressIndicator(
-                  color: AppColors.primary,
-                ),
-              )
-                  : _filteredProducts.isEmpty
-                  ? Center(
-                child: Text(
-                  _selectedCategoryId == null && _searchQuery.isEmpty
-                      ? 'Kategoriyani tanlang'
-                      : 'Mahsulot topilmadi',
-                  style: const TextStyle(color: AppColors.grey),
-                ),
-              )
-                  : GridView.builder(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: isDesktop ? 5 : (isTablet ? 4 : 3),
-                  childAspectRatio: 1.5,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                itemCount: _filteredProducts.length,
-                itemBuilder: (context, index) {
-                  final product = _filteredProducts[index];
-                  return _buildProductCard(product, isDesktop);
-                },
-              ),
+                  _isLoading
+                      ? const Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.primary,
+                        ),
+                      )
+                      : _filteredProducts.isEmpty
+                      ? Center(
+                        child: Text(
+                          _selectedCategoryId == null && _searchQuery.isEmpty
+                              ? 'Kategoriyani tanlang'
+                              : 'Mahsulot topilmadi',
+                          style: const TextStyle(color: AppColors.grey),
+                        ),
+                      )
+                      : GridView.builder(
+                        physics: AlwaysScrollableScrollPhysics(),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: isDesktop ? 5 : (isTablet ? 4 : 3),
+                          childAspectRatio: 1.5,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                        ),
+                        itemCount: _filteredProducts.length,
+                        itemBuilder: (context, index) {
+                          final product = _filteredProducts[index];
+                          return _buildProductCard(product, isDesktop);
+                        },
+                      ),
             ),
           ),
         ],
@@ -1304,13 +1570,13 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     final cartEntry = _cart[product.id];
     final int quantityInCart = cartEntry?['quantity']?.toInt() ?? 0;
     final double kgInCart =
-    product.unit == 'kg'
-        ? (cartEntry?['quantity']?.toDouble() ?? 1.0)
-        : 1.0;
-    final double totalPrice =
-    product.unit == 'kg'
-        ? product.price * kgInCart
-        : product.price * quantityInCart;
+        product.unit == 'kg'
+            ? (cartEntry?['quantity']?.toDouble() ?? 1.0)
+            : 1.0;
+    final num totalPrice =
+        product.unit == 'kg'
+            ? product.price * kgInCart
+            : product.price * quantityInCart;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1331,9 +1597,9 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color:
-                quantityInCart > 0 || kgInCart > 0
-                    ? Colors.white
-                    : Colors.grey[400]!,
+                    quantityInCart > 0 || kgInCart > 0
+                        ? Colors.white
+                        : Colors.grey[400]!,
                 width: quantityInCart > 0 || kgInCart > 0 ? 2 : 1,
               ),
               boxShadow: [
@@ -1398,8 +1664,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                       GestureDetector(
                         onTap: () => _updateCart(product.id, -1),
                         child: Container(
-                          width: 28,
-                          height: 28,
+                          width: 50,
+                          height: 50,
                           decoration: BoxDecoration(
                             color: Colors.redAccent,
                             borderRadius: BorderRadius.circular(16),
@@ -1421,8 +1687,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                           }
                         },
                         child: Container(
-                          width: 28,
-                          height: 28,
+                          width: 50,
+                          height: 50,
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(16),
@@ -1438,8 +1704,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                       GestureDetector(
                         onTap: () => _updateCart(product.id, -1),
                         child: Container(
-                          width: 28,
-                          height: 28,
+                          width: 50,
+                          height: 50,
                           decoration: BoxDecoration(
                             color: Colors.redAccent,
                             borderRadius: BorderRadius.circular(16),
@@ -1470,8 +1736,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                           }
                         },
                         child: Container(
-                          width: 28,
-                          height: 28,
+                          width: 50,
+                          height: 50,
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(16),
@@ -1485,33 +1751,10 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                       ),
                     ] else ...[
                       GestureDetector(
-                        onTap: () {
-                          if (product.unit == 'kg') {
-                            _showKgInputModal(context, product);
-                          } else {
-                            _updateCart(product.id, 1);
-                          }
-                        },
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Icon(
-                            Icons.add,
-                            size: 18,
-                            color: const Color(0xFF144D37),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 15,),
-                      GestureDetector(
                         onTap: () => _showNoteInputModal(context, product),
                         child: Container(
-                          width: 28,
-                          height: 28,
+                          width: 50,
+                          height: 50,
                           decoration: BoxDecoration(
                             color: Colors.blueAccent,
                             borderRadius: BorderRadius.circular(16),
@@ -1523,7 +1766,29 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                           ),
                         ),
                       ),
-
+                      SizedBox(width: 15),
+                      GestureDetector(
+                        onTap: () {
+                          if (product.unit == 'kg') {
+                            _showKgInputModal(context, product);
+                          } else {
+                            _updateCart(product.id, 1);
+                          }
+                        },
+                        child: Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Icon(
+                            Icons.add,
+                            size: 18,
+                            color: const Color(0xFF144D37),
+                          ),
+                        ),
+                      ),
                     ],
                   ],
                 ),
@@ -1563,8 +1828,9 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
 
   void _showNoteInputModal(BuildContext context, Ovqat product) {
     final currentNote = _cart[product.id]?['note'] ?? '';
-    final TextEditingController noteController =
-    TextEditingController(text: currentNote);
+    final TextEditingController noteController = TextEditingController(
+      text: currentNote,
+    );
 
     showDialog(
       context: context,
@@ -1578,7 +1844,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
               hintText: "Izoh qo‘shish ...",
               border: OutlineInputBorder(),
             ),
-            onTap: (){
+            onTap: () {
               KeyboardManager.showKeyboard(context, noteController);
             },
           ),
@@ -1624,14 +1890,14 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: isDesktop ? 200 : 150),
+            constraints: BoxConstraints(maxWidth: isDesktop ? 250 : 200),
             child: OutlinedButton.icon(
               onPressed:
-              _isSubmitting ? null : () => Navigator.of(context).pop(),
+                  _isSubmitting ? null : () => Navigator.of(context).pop(),
               icon: const Icon(Icons.arrow_back, size: 18),
               label: const Text(
                 'Bekor qilish',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
               ),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(
@@ -1648,50 +1914,50 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
           ),
           const SizedBox(width: 16),
           ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: isDesktop ? 300 : 250),
+            constraints: BoxConstraints(maxWidth: isDesktop ? 500 : 300),
             child: ElevatedButton.icon(
               onPressed:
-              (isCartEmpty || _isSubmitting)
-                  ? null
-                  : (widget.isAddingToExistingOrder
-                  ? _addItemsToExistingOrder
-                  : _createOrderUltraFast),
+                  (isCartEmpty || _isSubmitting)
+                      ? null
+                      : (widget.isAddingToExistingOrder
+                          ? _addItemsToExistingOrder
+                          : _createOrderUltraFast),
               icon:
-              _isSubmitting
-                  ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    Colors.white,
-                  ),
-                ),
-              )
-                  : Icon(
-                widget.isAddingToExistingOrder
-                    ? Icons.add_shopping_cart
-                    : Icons.restaurant_menu,
-                size: 18,
-              ),
+                  _isSubmitting
+                      ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
+                        ),
+                      )
+                      : Icon(
+                        widget.isAddingToExistingOrder
+                            ? Icons.add_shopping_cart
+                            : Icons.restaurant_menu,
+                        size: 18,
+                      ),
               label: Text(
                 _isSubmitting
                     ? (widget.isAddingToExistingOrder
-                    ? 'Qo\'shilmoqda...'
-                    : 'Yuborilmoqda...')
+                        ? 'Qo\'shilmoqda...'
+                        : 'Yuborilmoqda...')
                     : (widget.isAddingToExistingOrder
-                    ? 'Mahsulot qo\'shish (${_currencyFormatter.format(total)} so\'m)'
-                    : 'Zakaz berish (${_currencyFormatter.format(total)} so\'m)'),
+                        ? 'Mahsulot qo\'shish (${_currencyFormatter.format(total)} so\'m)'
+                        : 'Zakaz berish (${_currencyFormatter.format(total)} so\'m)'),
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 22,
                   fontWeight: FontWeight.bold,
                 ),
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor:
-                (isCartEmpty || _isSubmitting)
-                    ? AppColors.grey
-                    : AppColors.primary,
+                    (isCartEmpty || _isSubmitting)
+                        ? AppColors.grey
+                        : AppColors.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -1903,12 +2169,12 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                       Expanded(
                         child: ElevatedButton(
                           onPressed:
-                          kg > 0
-                              ? () {
-                            _updateCart(product.id, 1, kg: kg);
-                            Navigator.of(context).pop();
-                          }
-                              : null,
+                              kg > 0
+                                  ? () {
+                                    _updateCart(product.id, 1, kg: kg);
+                                    Navigator.of(context).pop();
+                                  }
+                                  : null,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             padding: const EdgeInsets.symmetric(
@@ -1942,11 +2208,11 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
 
   // Tugma funksiyasi (eski _buildNumberButton ni almashtiring)
   Widget _buildNumberButton(
-      String text,
-      VoidCallback onTap, {
-        bool isSelected = false,
-        bool isSpecial = false,
-      }) {
+    String text,
+    VoidCallback onTap, {
+    bool isSelected = false,
+    bool isSpecial = false,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -2010,6 +2276,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       });
     }
   }
+
   List<int> _createPrintDataForAddition(Map<String, dynamic> data) {
     final bytes = <int>[];
     const printerWidth = 32;
@@ -2019,14 +2286,13 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
 
     bytes.addAll([0x1B, 0x61, 1]); // Center
     bytes.addAll(_encodeText('QO\'SHIMCHA MAHSULOT\r\n'));
-    bytes.addAll(
-        _encodeText('Zakaz : ${widget.formatted_order_number}\r\n'));
+    bytes.addAll(_encodeText('Zakaz : ${widget.formatted_order_number}\r\n'));
     bytes.addAll(_encodeText('Ofitsiant: ${data['waiter_name']}\r\n'));
 
     final tableLine =
         '${data['table_name']}'.padRight(15) +
-            DateTime.now().toString().substring(11, 16);
-    bytes.addAll(_encodeText(tableLine + '\r\n'));
+        DateTime.now().toString().substring(11, 16);
+    bytes.addAll(_encodeText('$tableLine\r\n'));
 
     bytes.addAll(_encodeText('=' * printerWidth + '\r\n'));
 
@@ -2036,7 +2302,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       final line = name.padRight(20) + qty;
 
       bytes.addAll([0x1B, 0x61, 0]); // Left
-      bytes.addAll(_encodeText(line + '\r\n'));
+      bytes.addAll(_encodeText('$line\r\n'));
 
       // ✏️ Qo‘shimcha izohni chiqarish
       final note = _cart[item['id']]?['note'] ?? '';

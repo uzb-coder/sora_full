@@ -35,7 +35,7 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.teal,
         scaffoldBackgroundColor: Colors.grey[100],
         fontFamily: 'Roboto',
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           elevation: 2,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
