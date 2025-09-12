@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
@@ -1355,7 +1356,7 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 
-  static const String baseUrl = "${ApiConfig.baseUrl}";
+  static const String baseUrl = ApiConfig.baseUrl;
 
   bool _mapsEqual(Map<String, bool> map1, Map<String, bool> map2) {
     if (map1.length != map2.length) return false;
@@ -2311,6 +2312,7 @@ class _PosScreenState extends State<PosScreen> {
 
   Widget _buildOrderCard(Order order, int index) {
     // Debug log qo'shish
+
     print(
       "🎨 _buildOrderCard chaqirildi: order.id=${order.id}, items.length=${order.items.length}",
     );
@@ -2331,7 +2333,7 @@ class _PosScreenState extends State<PosScreen> {
 
     return Container(
       // MUHIM: Unique key qo'shish
-      key: ValueKey("order_${order.id}_${order.items.length}_${displayTotal}"),
+      key: ValueKey("order_${order.id}_${order.items.length}_$displayTotal"),
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -2452,7 +2454,7 @@ class _PosScreenState extends State<PosScreen> {
 
             // JAMI SUMMA
             Container(
-              key: ValueKey("total_${order.id}_${displayTotal}"),
+              key: ValueKey("total_${order.id}_$displayTotal"),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: AppColors.primary.withOpacity(0.06),
@@ -2667,7 +2669,7 @@ class _PosScreenState extends State<PosScreen> {
             user: widget.user,
             token: widget.token,
             isAddingToExistingOrder: true,
-            existingOrderId: order.id,
+            existingOrderId: order.tableId,
             onOrderCreated: () async {
               print("🔄 onOrderCreated callback ishga tushdi");
 
