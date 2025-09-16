@@ -9,7 +9,6 @@ import 'Blyuda/Otdel.dart';
 import 'Blyuda/Personal_restoran.dart';
 import 'Cilnet_page.dart';
 import 'Blyuda/Stollar_page.dart';
-import 'Zall_page.dart';
 
 class ManagerHomePage extends StatefulWidget {
   final User user;
@@ -104,7 +103,7 @@ class _ManagerHomePageState extends State<ManagerHomePage> {
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
             child: ElevatedButton(
               onPressed: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => HallsPage(token: widget.token,)));
+                Navigator.push(context, MaterialPageRoute(builder: (context) => TablesPage(token: widget.token,)));
               },
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(120, 70),

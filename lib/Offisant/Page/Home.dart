@@ -1,25 +1,25 @@
-import 'dart:convert';
-import 'dart:developer';
-import 'package:flutter/material.dart';
+import 'package:auto_size_text/auto_size_text.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'package:jwt_decoder/jwt_decoder.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:top_snackbar_flutter/top_snack_bar.dart';
-import 'dart:io';
-import 'dart:async';
-import '../../DB/Servis/category_local_service.dart';
-import '../../DB/Servis/db_helper.dart';
-import '../../DB/Servis/food_local_service.dart';
-import '../../DB/Servis/hall_local_service.dart';
-import '../../DB/Servis/table_local_service.dart';
-import '../../Global/Api_global.dart';
-import '../Controller/TokenCOntroller.dart';
-import '../Controller/usersCOntroller.dart';
-import '../Model/Ovqat_model.dart';
-import 'Categorya_page.dart';
-import 'Ranglar.dart';
-import 'Yopilgan_zakaz_page.dart';
+
+import '../../Global/my_pkg.dart';
+
+class AppColors {
+  static const primary = Color(0xFF144D37);
+  static const secondary = Color(0xFF144D37);
+  static const accent = Color(0xFF144D37);
+  static const surface = Color(0xFFF5F5F5); // Kulrang orqa fon
+  static const white = Colors.white;
+  static const grey = Color(0xFF6B7280);
+  static const lightGrey = Color(0xFFE5E7EB); // Kulrang
+  static const background = Color(0xFFE8E8E8); // Asosiy orqa fon
+  static const cardBackground = Color(0xFFF9F9F9); // Kartalar uchun
+  static const error = Color(0xFFDC2626);
+  static const warning = Color(0xFFF59E0B);
+  static const categoryActive = Color(0xFF059669); // Faol kategoriya
+  static const categoryInactive = Color(0xFF9CA3AF); // Nofaol kategoriya
+}
 
 class Order {
   final String id;
@@ -30,9 +30,8 @@ class Order {
   final num totalPrice;
   final String status;
   final String createdAt;
-  final String formatted_order_number;
-  final int isSynced; // 🔹 qo‘shildi
   bool isProcessing;
+  final String formatted_order_number;
 
   Order({
     required this.id,
@@ -45,21 +44,23 @@ class Order {
     required this.createdAt,
     required this.formatted_order_number,
     this.isProcessing = false,
-    this.isSynced = 0,
   });
 
   factory Order.fromJson(Map<String, dynamic> json) {
     return Order(
-      id: (json['_id'] ?? json['id']).toString(),
-      tableId: (json['table_id'] ?? '').toString(),
-      userId: (json['user_id'] ?? '').toString(),
-      firstName: (json['waiter_name'] ?? '').toString(),
-      items: [],
-      totalPrice: num.tryParse(json['total_price'].toString()) ?? 0,
-      status: json['status'] ?? 'pending',
-      createdAt: json['created_at'] ?? '',
-      formatted_order_number: json['formatted_order_number'] ?? '',
-      isSynced: json['is_synced'] ?? 0,
+      id: json['_id'] ?? '',
+      tableId: json['table_id']?.toString() ?? '',
+      formatted_order_number: json['formatted_order_number']?.toString() ?? '',
+      userId: json['user_id'] ?? '',
+      firstName: json['waiter_name'] ?? json['first_name'] ?? '',
+      items:
+          (json['items'] as List?)
+              ?.map((item) => OrderItem.fromJson(item))
+              .toList() ??
+          [],
+      totalPrice: (json['total_price'] ?? 0).toDouble(),
+      status: json['status'] ?? '',
+      createdAt: json['createdAt'] ?? '',
     );
   }
 }
@@ -68,7 +69,7 @@ class OrderItem {
   final String foodId;
   final String? name;
   final num quantity;
-  final num? price; // double/int ikkalasini qamrab oladi
+  final num? price; // int emas, double bo‘ldi
   final String? categoryName;
 
   OrderItem({
@@ -80,65 +81,15 @@ class OrderItem {
   });
 
   factory OrderItem.fromJson(Map<String, dynamic> json) {
-    // ⚙️ Serverdan turli nomlarda kelishi mumkin, bularni qamrab olamiz:
-    final foodObj =
-        json['food'] is Map<String, dynamic>
-            ? (json['food'] as Map<String, dynamic>)
-            : null;
-
-    final String id =
-        (json['food_id'] ??
-                json['foodId'] ??
-                foodObj?['_id'] ??
-                foodObj?['id'] ??
-                '')
-            .toString();
-
-    final String? itemName =
-        (json['name'] ??
-                json['food_name'] ??
-                json['title'] ??
-                foodObj?['name'] ??
-                foodObj?['title'])
-            ?.toString();
-
-    // quantity ham har xil nomda kelishi mumkin
-    final num qty =
-        (json['quantity'] ?? json['qty'] ?? json['amount'] ?? 0) is num
-            ? (json['quantity'] ?? json['qty'] ?? json['amount'] ?? 0) as num
-            : num.tryParse(
-                  (json['quantity'] ?? json['qty'] ?? json['amount'] ?? '0')
-                      .toString(),
-                ) ??
-                0;
-
-    // narx uchun ehtimoliy maydonlar
-    final dynamic p =
-        json['price'] ??
-        json['unit_price'] ??
-        json['unitPrice'] ??
-        json['selling_price'] ??
-        json['sell_price'] ??
-        json['price_per_unit'];
-
-    final num? parsedPrice =
-        p == null ? null : (p is num ? p : num.tryParse(p.toString()));
-
-    final String? catName =
-        (json['category_name'] ??
-                json['categoryName'] ??
-                foodObj?['category_name'] ??
-                foodObj?['category'] ??
-                json['category'] ??
-                json['cat'])
-            ?.toString();
-
     return OrderItem(
-      foodId: id,
-      name: itemName,
-      quantity: qty,
-      price: parsedPrice,
-      categoryName: catName,
+      foodId: json['food_id'] ?? '',
+      quantity: json['quantity'] ?? 0,
+      name: json['name'],
+      price:
+          json['price'] != null
+              ? (json['price'] as num).toDouble()
+              : null, // int/double ikkalasini qamrab oladi
+      categoryName: json['category_name'],
     );
   }
 }
@@ -192,220 +143,6 @@ class Category {
   }
 }
 
-class TableModel {
-  final String id;
-  final String name;
-  final String status;
-  final int guestCount;
-  final int capacity;
-
-  TableModel({
-    required this.id,
-    required this.name,
-    required this.status,
-    required this.guestCount,
-    required this.capacity,
-  });
-
-  factory TableModel.fromJson(Map<String, dynamic> json) {
-    return TableModel(
-      id: json['_id'] ?? '',
-      name: json['name'] ?? '',
-      status: json['status'] ?? '',
-      guestCount: json['guest_count'] ?? 0,
-      capacity: json['capacity'] ?? 0,
-    );
-  }
-}
-
-class HallModel {
-  final String id;
-  final String name;
-  final List<TableModel> tables;
-
-  HallModel({required this.id, required this.name, required this.tables});
-
-  factory HallModel.fromJson(Map<String, dynamic> json) {
-    return HallModel(
-      id: json['_id'] ?? '',
-      name: json['name'] ?? '',
-      tables:
-          (json['tables'] as List? ?? [])
-              .map((t) => TableModel.fromJson(t))
-              .toList(),
-    );
-  }
-}
-
-class HallController {
-  static const String baseUrl = ApiConfig.baseUrl;
-  static Timer? _syncTimer;
-
-  /// 🔑 Sozlamalar uchun kalitlar
-  static const _kLastSyncKey = 'halls_last_sync';
-
-  /// 🧠 Localdan qaytaradi, serverga umuman chiqmaydi
-  static Future<List<HallModel>> getHalls(String token) async {
-    final localHalls = await HallLocalService.getHalls();
-    final localTables = await TableLocalService.getTables();
-
-    if (localHalls.isNotEmpty) {
-      print("📦 Localdan ${localHalls.length} hall olindi");
-    } else {
-      print("📦 Local bo'sh: 0 hall");
-    }
-
-    final hallsFromLocal =
-        localHalls.map((h) {
-          final tables =
-              localTables
-                  .where((t) => t['hall_id'] == h['id'])
-                  .map(
-                    (t) => TableModel(
-                      id: t['id'] as String,
-                      name: t['name'] as String,
-                      status: t['status'] as String,
-                      guestCount: (t['guest_count'] ?? 0) as int,
-                      capacity: (t['capacity'] ?? 0) as int,
-                    ),
-                  )
-                  .toList();
-
-          return HallModel(
-            id: h['id'] as String,
-            name: h['name'] as String,
-            tables: tables,
-          );
-        }).toList();
-
-    // ❌ Serverga chiqish bu yerda yo‘q
-    return hallsFromLocal;
-  }
-
-  /// ⏱ Har 1 soatda sync — dastur ochilganda darhol so‘rov yubormaydi.
-  /// ⚠️ Agar local bo‘sh bo‘lsa, bir marta sync qilib beradi (birinchi ishga tushirishda).
-  static Future<void> startAutoSync(String token) async {
-    _syncTimer?.cancel();
-
-    // 1) Birinchi marotaba ishga tushishda local bo‘sh bo‘lsa — bir marta sync
-    final localHalls = await HallLocalService.getHalls();
-    if (localHalls.isEmpty) {
-      print(
-        "🚀 Birinchi ishga tushirish: local bo‘sh, bir marta SYNC qilinadi",
-      );
-      await _syncFromServer(token);
-    } else {
-      print(
-        "⏳ Dastur ochildi: darhol so‘rov yuborilmaydi, 1 soatdan keyin SYNC boshlanadi",
-      );
-    }
-
-    // 2) Keyingi synclar: har 1 soatda
-    _syncTimer = Timer.periodic(const Duration(hours: 1), (_) async {
-      await _syncFromServer(token);
-      print("🔄 Avtomatik hall/stol SYNC bajarildi");
-    });
-  }
-
-  /// ⛔ Sync timer tozalash
-  static void stopAutoSync() {
-    _syncTimer?.cancel();
-    _syncTimer = null;
-  }
-
-  /// 🔄 Serverdan olib localni yangilash (ichki funksya)
-  static Future<void> _syncFromServer(String token) async {
-    print("🌍 [SYNC] Serverdan halls/list so‘rov yuborildi...");
-    try {
-      final response = await http.get(
-        Uri.parse("$baseUrl/halls/list"),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-
-      print("🌍 [SYNC] Javob status: ${response.statusCode}");
-
-      if (response.statusCode == 200) {
-        print("🌍 [SYNC] JSON decode boshlanmoqda...");
-        final List<dynamic> jsonList = json.decode(response.body);
-        print("🌍 [SYNC] ${jsonList.length} ta hall serverdan olindi");
-
-        final hallsForLocal = <Map<String, dynamic>>[];
-        final tablesForLocal = <Map<String, dynamic>>[];
-
-        for (var hall in jsonList) {
-          hallsForLocal.add({
-            'id': hall['_id'] ?? '',
-            'name': hall['name'] ?? '',
-          });
-
-          final hallTables = hall['tables'] as List? ?? [];
-          print("➡️ Hall: ${hall['name']} → ${hallTables.length} stol");
-
-          for (var t in hallTables) {
-            tablesForLocal.add({
-              'id': t['_id'] ?? '',
-              'hall_id': hall['_id'] ?? '',
-              'name': t['name'] ?? '',
-              'status': t['status'] ?? '',
-              'guest_count': t['guest_count'] ?? 0,
-              'capacity': t['capacity'] ?? 0,
-              'is_active': t['is_active'] == true ? 1 : 0,
-              'created_at': t['createdAt'] ?? '',
-              'updated_at': t['updatedAt'] ?? '',
-              'number': t['number'] ?? '',
-              'v': t['__v'] ?? 0,
-              'display_name': t['display_name'] ?? '',
-            });
-          }
-        }
-
-        print("💾 Localni tozalash...");
-        await HallLocalService.clearHalls();
-        await TableLocalService.clearTables();
-
-        print("💾 Localga halls yozilmoqda: ${hallsForLocal.length}");
-        await HallLocalService.upsertHalls(hallsForLocal);
-
-        print("💾 Localga tables yozilmoqda: ${tablesForLocal.length}");
-        await TableLocalService.upsertTables(tablesForLocal);
-
-        // 🕒 Oxirgi sync vaqtini saqlash
-        await _setLastSync(DateTime.now());
-
-        print(
-          "✅ [SYNC] ${hallsForLocal.length} hall va ${tablesForLocal.length} stol localga saqlandi",
-        );
-      } else {
-        print(
-          "⚠️ [SYNC] Server xatolik: ${response.statusCode}, body: ${response.body}",
-        );
-      }
-    } catch (e) {
-      print("⚠️ [SYNC] Xatolik: $e");
-    }
-  }
-
-  /// 📌 Qo‘lda sync qilish uchun (masalan: “Yangilash” tugmasi)
-  static Future<void> forceSync(String token) async {
-    await _syncFromServer(token);
-  }
-
-  static Future<void> _setLastSync(DateTime dt) async {
-    final p = await SharedPreferences.getInstance();
-    await p.setString(_kLastSyncKey, dt.toIso8601String());
-  }
-
-  static Future<DateTime?> getLastSync() async {
-    final p = await SharedPreferences.getInstance();
-    final s = p.getString(_kLastSyncKey);
-    if (s == null || s.isEmpty) return null;
-    return DateTime.tryParse(s);
-  }
-}
-
 class PosScreen extends StatefulWidget {
   final User user;
   final String token;
@@ -423,407 +160,147 @@ class _PosScreenState extends State<PosScreen> {
   String? _token;
 
   Timer? _realTimeTimer;
+  List<StolModel> _tables = [];
   Map<String, bool> _tableOccupiedStatus = {};
   Map<String, String> _tableOwners = {};
   Map<String, List<Order>> _ordersCache = {}; // Zakazlar keshi
   bool _isLoadingTables = false;
-  List<HallModel> _halls = [];
-  String? _selectedHallId;
 
   // Yangi o'zgaruvchilar qo'shildi
   List<Ovqat> _allProducts = [];
   List<Category> _categories = [];
   bool _isLoadingProducts = false;
-  Timer? _syncTimer; // 🔹 qo‘shib qo‘ying
 
   @override
   void initState() {
     super.initState();
     _initializeToken();
     _startRealTimeUpdates();
-    _loadProductsAndCategories();
-
-    // 1️⃣ Halls’ni darhol yuklash
-    _loadHalls();
-
-    // 2️⃣ Har 1 soatda serverdan sync qilish
-    HallController.startAutoSync(widget.token);
-    // 🔄 Har daqiqada stol ko‘chirish sync
-    Timer.periodic(const Duration(minutes: 1), (_) {
-      if (_token != null) {
-        syncMovedOrders(_token!);
-      }
-    });
-
-    // 🔄 Har 30 sekundda yopilgan orderlarni sync qilish
-    _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (_token != null) {
-        _syncClosedOrders(_token!);
-      }
-    });
-  }
-
-  Future<void> _loadHalls() async {
-    final halls = await HallController.getHalls(widget.token);
-    if (!mounted) return; // 🔑 qo‘shing
-    setState(() {
-      _halls = halls;
-    });
+    _loadProductsAndCategories(); // Yangi metod chaqiriladi
   }
 
   @override
   void dispose() {
-    HallController.stopAutoSync();
     _realTimeTimer?.cancel();
-    _syncTimer?.cancel();
     super.dispose();
   }
 
-  Future<void> _loadInitialHalls() async {
-    if (mounted) setState(() => _isLoadingTables = true);
-
-    try {
-      final halls = await fetchHalls();
-      if (mounted) {
-        setState(() {
-          _halls = halls;
-          _isLoadingTables = false;
-        });
-        _checkTableStatuses();
-      }
-    } catch (e) {
-      if (mounted) setState(() => _isLoadingTables = false);
-      print("Halls loading error: $e");
+  Map<String, String> _authHeaders() {
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    final t =
+        _token ?? (widget as dynamic).token; // widget.token bo‘lsa fallback
+    if (t != null && (t as String).isNotEmpty) {
+      headers['Authorization'] = 'Bearer $t';
     }
-  }
-
-  Future<List<HallModel>> fetchHalls() async {
-    final url = Uri.parse("${ApiConfig.baseUrl}/halls/list");
-    final response = await http.get(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ${widget.token}',
-      },
-    );
-
-    if (response.statusCode == 200) {
-      final List<dynamic> hallsJson = json.decode(response.body);
-      return hallsJson.map((json) => HallModel.fromJson(json)).toList();
-    } else {
-      throw Exception("Hallarni olishda xatolik: ${response.statusCode}");
-    }
-  }
-
-  List<TableModel> _getSelectedHallTables() {
-    if (_selectedHallId == null) return [];
-    final selectedHall = _halls.firstWhere(
-      (hall) => hall.id == _selectedHallId,
-      orElse: () => HallModel(id: '', name: '', tables: []),
-    );
-    return selectedHall.tables;
+    return headers;
   }
 
   Future<void> _fetchOrdersForTable(String tableId) async {
-    try {
-      final rows = await DBHelper.getOrdersByTable(tableId);
+    if (_token == null) return;
 
-      final orders =
-          rows.map((e) {
-              // 🟢 itemsni xavfsiz parse qilish
-              final List<dynamic> itemsRaw = (e['items'] as List?) ?? [];
-
-              final items =
-                  itemsRaw.map((raw) {
-                    final map =
-                        (raw is Map<String, dynamic>)
-                            ? raw
-                            : Map<String, dynamic>.from(raw as Map);
-
-                    return OrderItem(
-                      foodId: map['food_id']?.toString() ?? '',
-                      name: map['name']?.toString(),
-                      quantity:
-                          (map['quantity'] is num
-                              ? map['quantity']
-                              : num.tryParse(
-                                map['quantity']?.toString() ?? '0',
-                              )) ??
-                          0,
-                      price:
-                          (map['price'] is num
-                              ? map['price']
-                              : num.tryParse(
-                                map['price']?.toString() ?? '0',
-                              )) ??
-                          0,
-                      categoryName: map['category_name']?.toString(),
-                    );
-                  }).toList();
-
-              // 🧮 Jami hisoblash
-              final num calcTotal = items.fold<num>(
-                0,
-                (sum, it) => sum + (it.quantity * (it.price ?? 0)),
-              );
-
-              final num dbTotal =
-                  (e['total_price'] is num)
-                      ? e['total_price'] as num
-                      : num.tryParse(e['total_price']?.toString() ?? '0') ?? 0;
-
-              final num displayTotal = (dbTotal > 0) ? dbTotal : calcTotal;
-
-              return Order(
-                id: e['id'].toString(),
-                tableId: e['table_id']?.toString() ?? '',
-                userId: e['user_id']?.toString() ?? '',
-                firstName: e['waiter_name']?.toString() ?? '',
-                items: items,
-                totalPrice: displayTotal,
-                status: (e['status'] ?? 'pending').toString(),
-                createdAt: e['created_at']?.toString() ?? '',
-                formatted_order_number:
-                    e['formatted_order_number']?.toString() ?? '',
-                isSynced: e['is_synced'] as int? ?? 0,
-              );
-            }).toList()
-            ..removeWhere((o) => o.status != 'pending'); // faqat ochiq orderlar
-
-      if (mounted) {
-        setState(() {
-          _selectedTableOrders = List.from(orders); // 🔑 majburiy refresh
-          _isLoadingOrders = false;
-        });
-
-        print(
-          "✅ UI yangilandi: ${orders.length} ta order, items: ${orders.map((o) => o.items.map((i) => "${i.name} x${i.quantity}").join(", ")).join("; ")}",
-        );
-      }
-
-      // Local statuslarni yangilash
-      await _updateLocalTableStatuses();
-    } catch (e, stack) {
-      print("❌ Order olish xatoligi: $e\n🔍 Stack: $stack");
-      if (mounted) setState(() => _isLoadingOrders = false);
-    }
-  }
-
-  Future<void> _moveOrderToTable(String orderId, String newTableId) async {
-    print("➡️ [START] _moveOrderToTable chaqirildi");
-    print("   orderId: $orderId");
-    print("   newTableId: $newTableId");
+    setState(() => _isLoadingOrders = true);
 
     try {
-      // 🔹 Avval local DB yangilaymiz
-      print("💾 Local DB da orderni yangilashga urinyapman...");
-      await DBHelper.moveOrderLocal(orderId, newTableId);
-      print(
-        "✅ Local DB: Zakaz $orderId yangi stolga ko‘chirildi ($newTableId)",
-      );
-
-      // 🔄 UI yangilash
-      _ordersCache.remove(orderId);
-      await _fetchOrdersForTable(newTableId);
-      await _checkTableStatusesRealTime();
-      await _updateLocalTableStatuses();
-
-      // 🔍 Orderni olish
-      final orderRows = await DBHelper.getOrdersByTable(newTableId);
-      final order = orderRows.firstWhere(
-        (o) => o['id'].toString() == orderId,
-        orElse: () => {},
-      );
-
-      final serverId = order['server_id'];
-
-      if (serverId == null || serverId.toString().isEmpty) {
-        print(
-          "⏸ Serverga yuborilmadi: order hali sync qilinmagan (faqat localda ko‘chirildi).",
-        );
-        return;
-      }
-
-      // 🔑 Active tokenni olish
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString("active_token");
-      print("🟢 Active token: $token");
-
-      if (token == null || token.isEmpty) {
-        print("❌ Active token mavjud emas, serverga yuborilmadi");
-        return;
-      }
-
-      if (JwtDecoder.isExpired(token)) {
-        print("⚠️ Token eskirgan, foydalanuvchi qayta login qilishi kerak");
-        return;
-      }
-
-      // 🌍 Serverga PUT yuborish
-      print("🌍 Serverga PUT so‘rov yuborilmoqda...");
-      final response = await http.put(
-        Uri.parse("${ApiConfig.baseUrl}/orders/move-table"),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          "orderId": serverId, // 🔑 faqat serverId yuboriladi
-          "newTableId": newTableId,
-          "force": false,
-        }),
-      );
-
-      print("🌍 Server javob status: ${response.statusCode}");
-      print("🌍 Server javob body: ${response.body}");
+      final response = await http
+          .get(
+            Uri.parse("${ApiConfig.baseUrl}/orders/table/$tableId"),
+            headers: _authHeaders(), // ✅ to‘g‘ri
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        print("✅ Zakaz $serverId serverga muvaffaqiyatli ko‘chirildi");
-        await DBHelper.markOrderAsSynced(orderId); // Localni ham sync qilamiz
-      } else if (response.statusCode == 401) {
-        print(
-          "❌ Token yaroqsiz yoki muddati o‘tgan. Foydalanuvchini qayta login qilish kerak.",
-        );
-      } else {
-        print("⚠️ Server xatolik: ${response.statusCode} ${response.body}");
-      }
-    } catch (e) {
-      print("❌ _moveOrderToTable error: $e");
-    }
-  }
+        final List<dynamic> data = jsonDecode(response.body);
+        final orders =
+            data
+                .map((json) => Order.fromJson(json))
+                .where((order) => order.status == 'pending')
+                .toList();
 
-  Future<void> syncMovedOrders(String s) async {
-    try {
-      final db = await DBHelper.database;
+        orders.sort((a, b) => a.id.compareTo(b.id));
 
-      // faqat stol ko‘chirilgan, hali sync qilinmagan orderlarni olish
-      final unsyncedOrders = await db.query('orders', where: 'is_synced = 0');
+        // Cache'ni yangilash
+        _ordersCache[tableId] = orders;
 
-      print("🔄 SyncMovedOrders: ${unsyncedOrders.length} ta order topildi");
-
-      // 🔑 Active token olish
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString("active_token");
-
-      if (token == null || token.isEmpty) {
-        print("❌ Active token mavjud emas, sync to‘xtatildi");
-        return;
-      }
-
-      if (JwtDecoder.isExpired(token)) {
-        print("⚠️ Token eskirgan, foydalanuvchi qayta login qilishi kerak");
-        return;
-      }
-
-      for (final order in unsyncedOrders) {
-        final localId = order['id'].toString();
-        final newTableId = order['table_id'].toString();
-        final serverId = order['server_id']; // 🔑 bu sync bo‘lganda keladi
-
-        if (serverId == null || serverId.toString().isEmpty) {
-          print("⏸ Order $localId hali serverda yaratilmagan, skip qilindi");
-          continue;
-        }
-
-        print(
-          "➡️ Serverga move-table yuborilmoqda: orderId=$serverId → $newTableId",
-        );
-
-        final response = await http.put(
-          Uri.parse("${ApiConfig.baseUrl}/orders/move-table"),
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({
-            "orderId": serverId, // 🔑 faqat serverId yuboriladi
-            "newTableId": newTableId,
-            "force": false,
-          }),
-        );
-
-        print("🌍 Javob: ${response.statusCode} ${response.body}");
-
-        if (response.statusCode == 200) {
-          // agar muvaffaqiyatli bo‘lsa sync qilindi deb belgilaymiz
-          await db.update(
-            'orders',
-            {'is_synced': 1},
-            where: 'id = ?',
-            whereArgs: [localId],
-          );
-          print("✅ Order $localId sync qilindi (serverId=$serverId)");
-        } else if (response.statusCode == 401) {
-          print("❌ Token yaroqsiz. Foydalanuvchini qayta login qilish kerak.");
-          break;
-        } else {
-          print("⚠️ Order $localId sync qilinmadi, server xatolik");
-        }
-      }
-
-      // Syncdan keyin local statuslarni yangilash
-      await _updateLocalTableStatuses();
-    } catch (e) {
-      print("❌ syncMovedOrders xatolik: $e");
-    }
-  }
-
-  _handleTableTap(String tableName, String tableId) {
-    print("🖱️ Stol tanlandi: $tableName (ID: $tableId)");
-
-    setState(() {
-      _selectedTableName = tableName;
-      _selectedTableId = tableId;
-    });
-
-    // 🔥 Endi localdan olish
-    _fetchOrdersForTable(tableId);
-  }
-
-  void _startRealTimeUpdates() {
-    _realTimeTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
-      // Avval stol statuslarini tekshirish
-      await _checkTableStatusesRealTime();
-
-      // Local statuslarni yangilash
-      await _updateLocalTableStatuses();
-
-      // Agar stol tanlangan bo'lsa, orderlarni yangilash
-      if (_selectedTableId != null) {
-        await _fetchOrdersForTableSilently(_selectedTableId!);
-      }
-    });
-  }
-
-  Future<void> _updateLocalTableStatuses() async {
-    try {
-      final tableIds = _getSelectedHallTables().map((t) => t.id).toList();
-      if (tableIds.isEmpty) return;
-
-      final state = await DBHelper.getPendingStateByTables(tableIds);
-
-      final occupiedMap = state['occupied'] as Map<String, String>? ?? {};
-      final ownersMap = state['owners'] as Map<String, String>? ?? {};
-
-      final newOccupied = <String, bool>{};
-      for (final entry in occupiedMap.entries) {
-        newOccupied[entry.key] = entry.value == 'true';
-      }
-
-      if (mounted) {
-        bool statusChanged = !_mapsEqual(newOccupied, _tableOccupiedStatus);
-        bool ownerChanged = !_mapsEqualString(ownersMap, _tableOwners);
-
-        if (statusChanged || ownerChanged) {
+        if (mounted && _selectedTableId == tableId) {
           setState(() {
-            _tableOccupiedStatus = newOccupied;
-            _tableOwners = ownersMap;
+            _selectedTableOrders = orders;
+            _isLoadingOrders = false;
+          });
+        }
+      } else {
+        print("❌ Server xatosi: ${response.statusCode}");
+        _ordersCache[tableId] = [];
+        if (mounted && _selectedTableId == tableId) {
+          setState(() {
+            _selectedTableOrders = [];
+            _isLoadingOrders = false;
           });
         }
       }
     } catch (e) {
-      print("❌ Local table statuses update error: $e");
+      print("💥 Zakazlarni olishda xatolik: $e");
+      if (mounted && _selectedTableId == tableId) {
+        setState(() {
+          _selectedTableOrders = [];
+          _isLoadingOrders = false;
+        });
+      }
     }
+  }
+
+  Future<void> _moveOrderToTable(String orderId, String newTableId) async {
+    try {
+      final response = await http.put(
+        Uri.parse("${ApiConfig.baseUrl}/orders/move-table"),
+        headers: {
+          'Authorization': 'Bearer ${widget.token}',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          "orderId": orderId,
+          "newTableId": newTableId,
+          "force": false, // kerak bo‘lsa true qilib jo‘natasiz
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        showCenterSnackBar(context, "Zakaz ko'chirildi", color: Colors.green);
+        _clearCacheAndRefresh(); // yangilash
+      } else {
+        showCenterSnackBar(
+          context,
+          "Xatolik: ${response.statusCode}",
+          color: Colors.red,
+        );
+      }
+    } catch (e) {
+      showCenterSnackBar(
+        context,
+        "Ko'chirishda xatolik: $e",
+        color: Colors.red,
+      );
+    }
+  }
+
+  void _handleTableTap(String tableName, String tableId) {
+    setState(() {
+      _selectedTableName = tableName;
+      _selectedTableId = tableId;
+
+      _selectedTableOrders = _ordersCache[tableId] ?? [];
+    });
+
+    // Keyin fon rejimida API’dan yangisini olib kelamiz
+    _fetchOrdersForTableSilently(tableId);
+  }
+
+  void _startRealTimeUpdates() {
+    _realTimeTimer = Timer.periodic(const Duration(milliseconds: 800), (timer) {
+      _checkTableStatusesRealTime();
+      if (_selectedTableId != null) {
+        _fetchOrdersForTableSilently(_selectedTableId!);
+      }
+    });
   }
 
   Future<void> _checkTableStatusesRealTime() async {
@@ -832,7 +309,7 @@ class _PosScreenState extends State<PosScreen> {
       Map<String, String> newOwners = {};
 
       // Parallel requests bilan barcha stollarni tekshirish (tezroq)
-      final futures = _getSelectedHallTables().map((table) async {
+      final futures = _tables.map((table) async {
         try {
           final response = await http
               .get(
@@ -913,66 +390,36 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<void> _fetchOrdersForTableSilently(String tableId) async {
+    if (_token == null) return;
+
     try {
-      final rows = await DBHelper.getOrdersByTable(tableId);
+      final response = await http
+          .get(
+            Uri.parse("${ApiConfig.baseUrl}/orders/table/$tableId"),
+            headers: {
+              'Authorization': 'Bearer ${widget.token}',
+              'Content-Type': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 3));
 
-      List<Order> localOrders =
-          rows.map((e) {
-            final List<Map<String, dynamic>> itemsRaw =
-                (e['items'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        final orders =
+            data
+                .map((json) => Order.fromJson(json))
+                .where((order) => order.status == 'pending')
+                .toList();
 
-            final parsedItems =
-                itemsRaw.map((i) {
-                  return OrderItem(
-                    foodId: i['food_id']?.toString() ?? '',
-                    name: i['name']?.toString(),
-                    quantity:
-                        (i['quantity'] is num)
-                            ? i['quantity'] as num
-                            : num.tryParse(i['quantity']!.toString()) ?? 0,
-                    price:
-                        (i['price'] is num)
-                            ? i['price'] as num
-                            : num.tryParse(i['price']!.toString()),
-                    categoryName: i['category_name']?.toString(),
-                  );
-                }).toList();
+        orders.sort((a, b) => a.id.compareTo(b.id));
 
-            // Jami hisoblab chiqish
-            final num calcTotal = parsedItems.fold<num>(
-              0,
-              (s, it) => s + (it.quantity * (it.price ?? 0)),
-            );
+        _ordersCache[tableId] = orders;
 
-            final num dbTotal =
-                (e['total_price'] is num)
-                    ? e['total_price'] as num
-                    : num.tryParse(e['total_price']!.toString()) ?? 0;
-
-            final num displayTotal = (dbTotal > 0) ? dbTotal : calcTotal;
-
-            return Order(
-              id: e['id'].toString(),
-              tableId: e['table_id']?.toString() ?? '',
-              userId: e['user_id']?.toString() ?? '',
-              firstName: e['waiter_name']?.toString() ?? '',
-              items: parsedItems,
-              totalPrice: displayTotal,
-              status: (e['status'] ?? 'pending').toString(),
-              createdAt: e['created_at']?.toString() ?? '',
-              formatted_order_number:
-                  e['formatted_order_number']?.toString() ?? '',
-              isSynced: e['is_synced'] as int? ?? 0,
-            );
-          }).toList();
-
-      localOrders = localOrders.where((o) => o.status == "pending").toList();
-
-      // MAJBURIY yangilash
-      if (mounted && _selectedTableId == tableId) {
-        setState(() {
-          _selectedTableOrders = localOrders;
-        });
+        if (mounted && _selectedTableId == tableId) {
+          setState(() {
+            _selectedTableOrders = orders;
+          });
+        }
       }
     } catch (e) {
       print("❌ Silent fetch error: $e");
@@ -993,104 +440,88 @@ class _PosScreenState extends State<PosScreen> {
     });
   }
 
-  _showOrderScreenDialog(String tableId) {
+  void _showOrderScreenDialog(String tableId) {
+    bool isOccupied = _tableOccupiedStatus[tableId] ?? false;
+    String? tableOwner = _tableOwners[tableId];
+
+    if (isOccupied && tableOwner != null && tableOwner != widget.user.id) {
+      showCenterSnackBar(
+        context,
+        'Bu stol boshqa ofitsiantga tegishli!',
+        color: Colors.green,
+      );
+      return;
+    }
+
+    String? formattedOrderNumber =
+        _selectedTableOrders.isNotEmpty
+            ? _selectedTableOrders.first.formatted_order_number
+            : '';
+
     showDialog(
       context: context,
-      builder:
-          (_) => OrderScreenContent(
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog.fullscreen(
+          child: OrderScreenContent(
+            formatted_order_number: formattedOrderNumber,
             tableId: tableId,
             tableName: _selectedTableName,
             user: widget.user,
-            formatted_order_number:
-                "ORD-${DateTime.now().millisecondsSinceEpoch}",
-            token: widget.token,
             onOrderCreated: () async {
-              print("🔄 Yangi order yaratildi, UI yangilanmoqda...");
-
-              // Cache'ni tozalash
-              _ordersCache.clear();
-
-              // Orderlarni qayta yuklash
-              await _fetchOrdersForTable(tableId);
-
-              // Stol statuslarini yangilash
-              await _checkTableStatusesRealTime();
-              await _updateLocalTableStatuses();
-
-              // UI'ni majburiy yangilash
-              if (mounted) setState(() {});
-
-              print("✅ UI muvaffaqiyatli yangilandi");
+              _clearCacheAndRefresh();
             },
+            token: widget.token,
           ),
+        );
+      },
     );
   }
 
   Future<void> _closeOrder(Order order) async {
-    setState(() => order.isProcessing = true);
+    if (order.userId != widget.user.id) {
+      showCenterSnackBar(
+        context,
+        'Faqat o\'zingiz yaratgan zakazni yopa olasiz!',
+        color: Colors.green,
+      );
+      return;
+    }
 
     try {
-      // Localda yopamiz
-      await DBHelper.closeOrderLocal(order.id);
+      setState(() => order.isProcessing = true);
 
-      // UI dan darhol olib tashlaymiz
-      if (mounted) {
+      bool success = await closeOrder(order.id);
+
+      if (success) {
+        print("✅ Zakaz yopildi: ${order.id}");
+
         setState(() {
           _selectedTableOrders.removeWhere((o) => o.id == order.id);
 
-          // Agar tanlangan stolda boshqa pending order qolmagan bo‘lsa
-          if (_selectedTableOrders.isEmpty) {
+          // Agar zakazlar qolmagan bo'lsa, stolni bo'sh qilib qo'yish
+          if (_selectedTableOrders.isEmpty && _selectedTableId != null) {
             _tableOccupiedStatus[_selectedTableId!] = false;
             _tableOwners.remove(_selectedTableId!);
           }
         });
+
+        // Cache ni tozalash
+        if (_selectedTableId != null) {
+          _ordersCache[_selectedTableId!] = _selectedTableOrders;
+        }
+
+        // Real-time statusni yangilash (background da)
+        Future.microtask(() => _checkTableStatusesRealTime());
+
+        showCenterSnackBar(context, 'Zakaz yopildi', color: Colors.green);
+      } else {
+        showCenterSnackBar(context, 'Xatolik yuz berdi');
       }
-
-      // Local statuslarni yangilash
-      await _updateLocalTableStatuses();
-
-      showCenterSnackBar(context, "Zakaz yopildi", color: Colors.green);
     } catch (e) {
-      print(e);
-      showCenterSnackBar(context, "Xatolik: $e", color: Colors.red);
+      showCenterSnackBar(context, 'Xatolik: $e');
     } finally {
       if (mounted) setState(() => order.isProcessing = false);
-    }
-  }
-
-  Future<void> _syncClosedOrders(String token) async {
-    try {
-      final unsynced = await DBHelper.getUnsyncedClosedOrders();
-      if (unsynced.isEmpty) return;
-
-      for (final o in unsynced) {
-        final localId = o['id'].toString();
-        final serverId = o['server_id']?.toString();
-
-        if (serverId == null || serverId.isEmpty) continue;
-
-        // Assume server endpoint for closing order
-        final resp = await http.put(
-          Uri.parse("${ApiConfig.baseUrl}/orders/$serverId/close"),
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({}), // If needed, add body
-        );
-
-        if (resp.statusCode == 200) {
-          await DBHelper.markOrderCloseSynced(localId);
-          print("✅ Closed order $localId synced (serverId=$serverId)");
-        } else {
-          print("⚠️ Closed order $localId sync failed: ${resp.statusCode}");
-        }
-      }
-
-      // Syncdan keyin local statuslarni yangilash
-      await _updateLocalTableStatuses();
-    } catch (e) {
-      print("❌ _syncClosedOrders error: $e");
     }
   }
 
@@ -1100,7 +531,7 @@ class _PosScreenState extends State<PosScreen> {
       Map<String, String> newOwners = {};
 
       // Parallel requests bilan barcha stollarni tekshirish
-      final futures = _getSelectedHallTables().map((table) async {
+      final futures = _tables.map((table) async {
         try {
           final response = await http
               .get(
@@ -1208,8 +639,6 @@ class _PosScreenState extends State<PosScreen> {
         if (response.statusCode == 200) {
           try {
             final decoded = json.decode(response.body);
-
-            // API javobini to'g'ri parse qilish
             List<dynamic> categoriesList;
             if (decoded is List) {
               categoriesList = decoded;
@@ -1242,6 +671,8 @@ class _PosScreenState extends State<PosScreen> {
           _isLoadingProducts = false;
         });
       }
+
+      for (var c in _categories) {}
     } catch (e) {
       if (mounted) setState(() => _isLoadingProducts = false);
     }
@@ -1265,7 +696,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   List<int> _encodeText(String text) {
-    return latin1.encode(text); // CP866 yoki UTF-8 kodlash
+    return latin1.encode(text);
   }
 
   Future<void> _printCancelledItem(
@@ -1276,71 +707,49 @@ class _PosScreenState extends State<PosScreen> {
   ) async {
     try {
       debugPrint('🖨️ Bekor qilingan mahsulot print qilinmoqda');
+      debugPrint("🟢 Categories IDs: ${_categories.map((c) => c.id).toList()}");
 
-      // 1️⃣ Avval productni _allProducts dan izlaymiz
-      Ovqat? product;
-      try {
-        product = _allProducts.firstWhere(
-          (p) => p.id == item.foodId,
-          orElse:
-              () => Ovqat(
-                id: '',
-                name: item.name ?? 'Nomaʼlum',
-                price: item.price ?? 0,
-                categoryId: '',
-                categoryName: item.categoryName ?? '',
-                subcategory: null,
-                subcategories: [],
-              ),
-        );
-      } catch (_) {}
+      // Mahsulotning kategoriyasini topish
+      final product = _allProducts.firstWhere(
+        (p) => p.id == item.foodId,
+        orElse:
+            () => Ovqat(
+              id: '',
+              name: 'Noma\'lum',
+              price: 0,
+              categoryId: '',
+              subcategory: null,
+              categoryName: '',
+              subcategories: [],
+            ),
+      );
 
-      // 2️⃣ Agar product topilmasa, local DB dan olish
-      if (product == null || product.id.isEmpty) {
-        final rows = await FoodLocalService.getFoodById(item.foodId);
-        if (rows != null) {
-          product = Ovqat.fromJson(rows);
-        }
-      }
+      final category = _categories.firstWhere(
+        (cat) => cat.id == product.categoryId,
+        orElse:
+            () => Category(
+              id: '',
+              title: '',
+              printerId: '',
+              printerName: '',
+              printerIp: '',
+              subcategories: [],
+            ),
+      );
 
-      // 3️⃣ Kategoriyani _categories dan izlash
-      Category? category;
-      try {
-        category = _categories.firstWhere(
-          (cat) => cat.id == product?.categoryId,
-          orElse:
-              () => Category(
-                id: '',
-                title: product?.categoryName ?? '',
-                printerId: '',
-                printerName: '',
-                printerIp: '',
-                subcategories: [],
-              ),
-        );
-      } catch (_) {}
-
-      // 4️⃣ Agar kategoriya topilmasa, local DB dan olish
-      if (category == null || category.id.isEmpty) {
-        final rows = await CategoryLocalService.getCategoryById(
-          product?.categoryId ?? '',
-        );
-        if (rows != null) {
-          category = Category.fromJson(rows);
-        }
-      }
-
-      // 5️⃣ Endi printerga yuborish
-      if (category != null && category.printerIp.isNotEmpty) {
+      // Printer IP borligini tekshirish
+      if (category.printerIp.isNotEmpty && category.printerIp != 'null') {
         final printData = {
           'orderNumber': order.formatted_order_number,
-          'waiter_name': widget.user.firstName,
+          'waiter_name': widget.user.firstName ?? 'Noma\'lum',
           'table_name': _selectedTableName ?? 'N/A',
-          'item_name': product?.name ?? item.name ?? 'Nomaʼlum',
+          'item_name': item.name ?? 'Noma\'lum mahsulot',
           'cancel_quantity': cancelQuantity,
           'reason': reason,
           'time': DateTime.now().toString().substring(11, 16),
         };
+
+        debugPrint("📡 ${category.title} => printerIp: ${category.printerIp}");
 
         final printBytes = _createCancelPrintData(printData);
         await _printToSocket(category.printerIp, printBytes);
@@ -1349,14 +758,36 @@ class _PosScreenState extends State<PosScreen> {
           '✅ Bekor qilingan mahsulot ${category.printerIp} ga yuborildi',
         );
       } else {
-        debugPrint('⚠️ Kategoriya printeri topilmadi (local + server)');
+        debugPrint("📡 ${category.title} => printerIp: ${category.printerIp}");
+        debugPrint('⚠️ Kategoriya printeri topilmadi');
       }
     } catch (e) {
       debugPrint('❌ Cancel print error: $e');
     }
   }
 
-  static const String baseUrl = ApiConfig.baseUrl;
+  // Stol Controller
+  static const String baseUrl = "${ApiConfig.baseUrl}";
+  Future<List<StolModel>> fetchTables() async {
+    final url = Uri.parse("$baseUrl/tables/list");
+    final response = await http.get(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ${widget.token}', // afitsant tokeni headerda
+      },
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> tablesJson = json.decode(response.body);
+      return tablesJson.map((json) => StolModel.fromJson(json)).toList();
+    } else if (response.statusCode == 401) {
+      throw Exception(
+        "Token yaroqsiz yoki muddati o'tgan. Qayta login qiling.",
+      );
+    } else {
+      throw Exception("Xatolik: ${response.statusCode}");
+    }
+  }
 
   bool _mapsEqual(Map<String, bool> map1, Map<String, bool> map2) {
     if (map1.length != map2.length) return false;
@@ -1376,16 +807,48 @@ class _PosScreenState extends State<PosScreen> {
 
   Future<void> _initializeToken() async {
     try {
-      _token = await AuthService.getToken();
-      if (_token == null) {
-        await AuthService.loginAndPrintToken();
+      // 1) Avval konstruktor orqali kelgan tokenni oling
+      _token = widget.token;
+
+      // 2) Bo‘sh bo‘lsa localdan oling
+      if (_token == null || _token!.isEmpty) {
         _token = await AuthService.getToken();
       }
-      if (_token != null) {
-        _loadInitialHalls();
+
+      // 3) Hali ham bo‘sh bo‘lsa – login sahifasiga yo‘naltiring (yoki error ko‘rsating)
+      if (_token == null || _token!.isEmpty) {
+        // Bu yerda avtomatik login qila olmaysiz – foydalanuvchi credential kiritishi kerak
+        showCenterSnackBar(
+          context,
+          "Iltimos, qayta tizimga kiring (token yo‘q).",
+          color: Colors.red,
+        );
+        return;
       }
+
+      // 4) Endi dastlabki yuklashlar
+      _loadInitialTables();
     } catch (e) {
       print("Token error: $e");
+    }
+  }
+
+  Future<void> _loadInitialTables() async {
+    if (mounted) setState(() => _isLoadingTables = true);
+
+    try {
+      final tables = await fetchTables();
+
+      if (mounted) {
+        setState(() {
+          _tables = tables;
+          _isLoadingTables = false;
+        });
+        _checkTableStatuses();
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingTables = false);
+      print("Tables loading error: $e");
     }
   }
 
@@ -1398,13 +861,23 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<bool> closeOrder(String orderId) async {
+    const String apiUrl = "${ApiConfig.baseUrl}/orders/close/";
     try {
-      // 🔹 Endi faqat localda yopamiz
-      await DBHelper.closeOrderLocal(orderId);
-      print("✅ Zakaz localda yopildi (order_id: $orderId)");
-      return true;
+      final response = await http.put(
+        Uri.parse("$apiUrl$orderId"),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${widget.token}',
+        },
+      );
+      if (response.statusCode == 200) {
+        return true;
+      } else {
+        print("Close order failed: ${response.statusCode} - ${response.body}");
+        return false;
+      }
     } catch (e) {
-      print("❌ Zakaz yopishda xatolik (local): $e");
+      print("Close order error: $e");
       return false;
     }
   }
@@ -1450,7 +923,7 @@ class _PosScreenState extends State<PosScreen> {
   final List<String> reasons = [
     "Mijoz bekor qildi",
     "Klient shikoyat qildi",
-    "Noto‘g‘ri tayyorlangan",
+    "Notogri tayyorlangan",
     "Mahsulot tugagan",
     "Xizmat sifati past",
     "Boshqa",
@@ -1601,103 +1074,60 @@ class _PosScreenState extends State<PosScreen> {
   ) async {
     setState(() => order.isProcessing = true);
 
-    try {
-      // 1️⃣ LOCAL'da o‘chirib qo‘yamiz (miqdor kamayadi yoki item o‘chadi, total qayta hisoblanadi)
-      await DBHelper.cancelOrderItemLocal(
-        orderId: orderId,
-        foodId: foodId,
-        cancelQuantity: cancelQuantity,
-        reason: reason,
-        notes: notes,
-      );
+    final result = await cancelOrderItemFast(
+      orderId: orderId,
+      foodId: foodId,
+      cancelQuantity: cancelQuantity,
+      reason: reason,
+      notes: notes,
+    );
 
-      // 2️⃣ UI ni yangilash (localdan qayta yuklab olamiz)
-      await _fetchOrdersForTable(_selectedTableId!);
-      await _checkTableStatuses();
-      await _updateLocalTableStatuses();
+    setState(() {
+      order.isProcessing = false;
+      if (result['success'] == true) {
+        final item = order.items[itemIndex];
+        final currentQuantity = item.quantity;
+        final newQuantity = currentQuantity - cancelQuantity;
 
-      // 3️⃣ Printerga xabar yuborish (o‘zgarmaydi)
-      final item = order.items[itemIndex];
-      _printCancelledItem(item, cancelQuantity, reason, order);
+        if (newQuantity <= 0) {
+          order.items.removeAt(itemIndex);
+        } else {
+          order.items[itemIndex] = OrderItem(
+            foodId: item.foodId,
+            name: item.name,
+            quantity: newQuantity,
+            price: item.price,
+            categoryName: item.categoryName,
+          );
+        }
 
-      // 4️⃣ Sync queue ni ishga tushirib yuborish (agar token bo‘lsa)
-      _trySyncCancelQueue();
-
-      showCenterSnackBar(
-        context,
-        "✅ Mahsulot bekor qilindi (LOCAL)!",
-        color: Colors.green,
-      );
-    } catch (e) {
-      showCenterSnackBar(context, "Xatolik: $e", color: AppColors.error);
-    } finally {
-      if (mounted) setState(() => order.isProcessing = false);
-    }
-  }
-
-  Future<void> _trySyncCancelQueue() async {
-    try {
-      // 🔑 Active token
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString("active_token");
-      if (token == null || token.isEmpty) return;
-      if (JwtDecoder.isExpired(token)) return;
-
-      final logs = await DBHelper.getUnsyncedCancelLogs();
-      if (logs.isEmpty) return;
-
-      for (final log in logs) {
-        final int logId = log['id'] as int;
-        final String orderLocalId = (log['order_local_id'] ?? '').toString();
-        String? orderServerId =
-            (log['order_server_id']?.toString().isNotEmpty ?? false)
-                ? log['order_server_id'].toString()
-                : null;
-
-        // Agar server_id yo‘q bo‘lsa – orderdan olib ko‘ramiz
-        if (orderServerId == null || orderServerId.isEmpty) {
-          final orderRow = await DBHelper.getOrderById(orderLocalId);
-          if (orderRow != null &&
-              (orderRow['server_id']?.toString().isNotEmpty ?? false)) {
-            orderServerId = orderRow['server_id'].toString();
+        if (order.items.isEmpty) {
+          _selectedTableOrders.removeWhere((o) => o.id == orderId);
+          _ordersCache[_selectedTableId!]!.removeWhere((o) => o.id == orderId);
+          if (_selectedTableOrders.isEmpty) {
+            _tableOccupiedStatus[_selectedTableId!] = false;
+            _tableOwners.remove(_selectedTableId!);
           }
         }
 
-        // Hali ham yo‘q bo‘lsa – keyinroq yuboramiz
-        if (orderServerId == null || orderServerId.isEmpty) {
-          continue;
-        }
+        // YANGI: Bekor qilingan mahsulotni printerga yuborish
+        _printCancelledItem(item, cancelQuantity, reason, order);
 
-        // Serverga yuborish
-        final resp = await http
-            .post(
-              Uri.parse('$baseUrl/orders/$orderServerId/cancel-item'),
-              headers: {
-                'Authorization': 'Bearer $token',
-                'Content-Type': 'application/json',
-              },
-              body: jsonEncode({
-                'food_id': log['food_id'],
-                'cancel_quantity': log['cancel_quantity'],
-                'reason': log['reason'] ?? '',
-                'notes': log['notes'] ?? '',
-              }),
-            )
-            .timeout(const Duration(seconds: 10));
-
-        if (resp.statusCode == 200) {
-          // muvaffaqiyatli bo‘lsa queue-ni closed qilamiz
-          await DBHelper.markCancelLogSynced(logId);
-        } else if (resp.statusCode == 401) {
-          // token muammo – to‘xtaymiz
-          break;
-        } else {
-          // boshqa xatolar – keyinga qoldiramiz
-        }
+        showCenterSnackBar(
+          context,
+          "✅ Mahsulot bekor qilindi!",
+          color: Colors.green,
+        );
+        _fetchOrdersForTable(_selectedTableId!);
+        _checkTableStatuses();
+      } else {
+        showCenterSnackBar(
+          context,
+          result['message']?.toString() ?? 'Mahsulotni bekor qilishda xatolik!',
+          color: AppColors.error,
+        );
       }
-    } catch (_) {
-      // Offline yoki boshqa xatolar – keyingi syncda urinadi
-    }
+    });
   }
 
   // YANGI: Bekor qilingan mahsulot uchun print ma'lumotini yaratish
@@ -1837,13 +1267,6 @@ class _PosScreenState extends State<PosScreen> {
           title: Row(
             children: [
               IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: () async {
-                  await HallController.forceSync(_token ?? "");
-                  setState(() {});
-                },
-              ),
-              IconButton(
                 icon: const Icon(
                   Icons.arrow_back_ios_rounded,
                   color: AppColors.primary,
@@ -1931,7 +1354,6 @@ class _PosScreenState extends State<PosScreen> {
     required bool isPrimary,
   }) {
     return Container(
-      height: 44,
       decoration: BoxDecoration(
         color: isPrimary ? AppColors.primary : AppColors.secondary,
         borderRadius: BorderRadius.circular(10),
@@ -1982,7 +1404,6 @@ class _PosScreenState extends State<PosScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 🔼 Tepada header
           Container(
             padding: const EdgeInsets.all(20),
             decoration: const BoxDecoration(
@@ -1997,7 +1418,7 @@ class _PosScreenState extends State<PosScreen> {
                 Icon(Icons.table_restaurant, color: AppColors.white, size: 24),
                 SizedBox(width: 12),
                 Text(
-                  'Zallar va Stollar',
+                  'Stollar',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -2007,44 +1428,6 @@ class _PosScreenState extends State<PosScreen> {
               ],
             ),
           ),
-
-          // 🔹 Hall tanlash uchun tugmalar
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Row(
-                children:
-                    _halls.map((hall) {
-                      final isSelected = _selectedHallId == hall.id;
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                        child: ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _selectedHallId = hall.id;
-                              _selectedTableId = null;
-                              _selectedTableName = null;
-                              _selectedTableOrders = [];
-                            });
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor:
-                                isSelected ? AppColors.primary : AppColors.grey,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: Text(hall.name),
-                        ),
-                      );
-                    }).toList(),
-              ),
-            ),
-          ),
-
-          // 🔽 Pastda tanlangan zalning stollari chiqadi
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -2056,37 +1439,24 @@ class _PosScreenState extends State<PosScreen> {
                           strokeWidth: 3,
                         ),
                       )
-                      : _halls.isEmpty
+                      : _tables.isEmpty
                       ? const Center(
                         child: Text(
-                          "Zallar topilmadi",
-                          style: TextStyle(color: AppColors.grey),
-                        ),
-                      )
-                      : _selectedHallId == null
-                      ? const Center(
-                        child: Text(
-                          "Iltimos, zalni tanlang",
-                          style: TextStyle(color: AppColors.grey),
-                        ),
-                      )
-                      : _getSelectedHallTables().isEmpty
-                      ? const Center(
-                        child: Text(
-                          "Bu zalda stollar yo'q",
+                          "Stollar topilmadi",
                           style: TextStyle(color: AppColors.grey),
                         ),
                       )
                       : GridView.builder(
                         gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 200,
+                          maxCrossAxisExtent:
+                              200, // element maksimal eni, xohlagancha sozlang
                           mainAxisSpacing: 16,
                           crossAxisSpacing: 16,
                           childAspectRatio: 1.1,
                         ),
-                        itemCount: _getSelectedHallTables().length,
+                        itemCount: _tables.length,
                         itemBuilder: (_, index) {
-                          final table = _getSelectedHallTables()[index];
+                          final table = _tables[index];
                           final isSelected = _selectedTableId == table.id;
                           final isOccupied =
                               _tableOccupiedStatus[table.id] ?? false;
@@ -2103,7 +1473,7 @@ class _PosScreenState extends State<PosScreen> {
                               }
                             },
                             child: _buildTableCard(
-                              table, // ✅ TableModel sifatida uzatiladi
+                              table,
                               isSelected,
                               isOccupied,
                               isOwnTable,
@@ -2119,7 +1489,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Widget _buildTableCard(
-    TableModel table,
+    StolModel table,
     bool isSelected,
     bool isOccupied,
     bool isOwnTable,
@@ -2145,10 +1515,11 @@ class _PosScreenState extends State<PosScreen> {
       statusText = "Tanlangan";
       borderColor = Colors.green;
     } else {
+      // 🟢 Bo'sh stol
       cardColor = Colors.green.withOpacity(0.05);
       textColor = Colors.green;
       statusText = "Bo'sh";
-      borderColor = Colors.green;
+      borderColor = Colors.green; // 🔥 Bo'sh stol borderi ham yashil bo‘ladi
     }
 
     return Container(
@@ -2176,7 +1547,7 @@ class _PosScreenState extends State<PosScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              table.name,
+              "${table.name}",
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -2311,281 +1682,284 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Widget _buildOrderCard(Order order, int index) {
-    // Debug log qo'shish
-
-    print(
-      "🎨 _buildOrderCard chaqirildi: order.id=${order.id}, items.length=${order.items.length}",
-    );
-    for (int i = 0; i < order.items.length; i++) {
-      print("   Item $i: ${order.items[i].name} x${order.items[i].quantity}");
-    }
-
     final isOwnOrder = order.userId == widget.user.id;
-    final canEdit = isOwnOrder;
-
-    // Fallback: agar DB total 0 bo'lsa, itemlardan hisoblab ko'rsatamiz
-    final num computedTotal = order.items.fold<num>(
-      0,
-      (s, it) => s + (it.quantity * (it.price ?? 0)),
-    );
-    final num displayTotal =
-        (order.totalPrice != 0) ? order.totalPrice : computedTotal;
 
     return Container(
-      // MUHIM: Unique key qo'shish
-      key: ValueKey("order_${order.id}_${order.items.length}_$displayTotal"),
-      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: AppColors.white,
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.primary.withOpacity(0.2)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: AppColors.lightGrey),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Order ma'lumotlari
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(Icons.receipt, size: 16, color: AppColors.primary),
-                SizedBox(width: 8),
                 Text(
-                  "Zakaz #${order.formatted_order_number}",
-                  style: TextStyle(
-                    fontSize: 14,
+                  "${order.formatted_order_number}",
+                  style: const TextStyle(
                     fontWeight: FontWeight.bold,
+                    fontSize: 16,
                     color: AppColors.primary,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              "Ofitsiant: ${order.firstName}",
-              style: const TextStyle(fontSize: 13, color: AppColors.grey),
-            ),
-            Text(
-              "Vaqt: ${_formatDateTime(order.createdAt)}",
-              style: const TextStyle(fontSize: 13, color: AppColors.grey),
-            ),
-
-            const SizedBox(height: 12),
-            const Text(
-              "Mahsulotlar:",
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: AppColors.primary,
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // ITEMLAR - har biri uchun unique key
-            ...order.items.asMap().entries.map((entry) {
-              int itemIndex = entry.key;
-              OrderItem item = entry.value;
-
-              return Container(
-                key: ValueKey(
-                  "item_${order.id}_${item.foodId}_${itemIndex}_${item.quantity}",
-                ),
-                margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.lightGrey,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.primary.withOpacity(0.1)),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        "${item.name ?? 'Mahsulot'} x${item.quantity}",
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    if (item.price != null)
-                      Text(
-                        "${NumberFormat('#,##0', 'uz').format(item.price! * item.quantity)} so'm",
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.accent,
-                        ),
-                      ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.delete,
-                        color: AppColors.error,
-                        size: 20,
-                      ),
-                      onPressed:
-                          canEdit
-                              ? () => showCancelDialog(
-                                order.id,
-                                item.foodId,
-                                itemIndex,
-                                order,
-                              )
-                              : null,
-                    ),
-                  ],
-                ),
-              );
-            }),
-
-            const SizedBox(height: 12),
-
-            // JAMI SUMMA
-            Container(
-              key: ValueKey("total_${order.id}_$displayTotal"),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.primary.withOpacity(0.2)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.payments,
-                    size: 18,
-                    color: AppColors.primary,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
                   ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    "Jami:",
+                  decoration: BoxDecoration(
+                    color: AppColors.warning,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'Kutilmoqda',
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 11,
+                      color: AppColors.white,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    "${NumberFormat('#,##0', 'uz').format(displayTotal)} so'm",
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.accent,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                // Qo'shish
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: ElevatedButton.icon(
-                      onPressed:
-                          canEdit
-                              ? () {
-                                print(
-                                  "🛒 Qo'shish tugmasi bosildi: order.id=${order.id}",
-                                );
-                                _showAddItemsDialog(order);
-                              }
-                              : null,
-                      icon: const Icon(Icons.add_shopping_cart, size: 18),
-                      label: const Text("Qo'shish"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.white,
-                        disabledBackgroundColor: AppColors.lightGrey,
-                        disabledForegroundColor: AppColors.grey,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-
-                // Yopish
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: ElevatedButton.icon(
-                      onPressed: canEdit ? () => _closeOrder(order) : null,
-                      icon: const Icon(Icons.check_circle, size: 18),
-                      label: const Text("Yopish"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.accent,
-                        foregroundColor: AppColors.white,
-                        disabledBackgroundColor: AppColors.lightGrey,
-                        disabledForegroundColor: AppColors.grey,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-
-                // Ko'chirish
-                Expanded(
-                  child: SizedBox(
-                    height: 44,
-                    child: ElevatedButton.icon(
-                      onPressed:
-                          canEdit ? () => _showMoveTableDialog(order) : null,
-                      icon: const Icon(Icons.swap_horiz, size: 18),
-                      label: const Text("Ko'chirish"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        foregroundColor: AppColors.white,
-                        disabledBackgroundColor: AppColors.lightGrey,
-                        disabledForegroundColor: AppColors.grey,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
                     ),
                   ),
                 ),
               ],
             ),
-
-            if (!canEdit) ...[
+            if (isOwnOrder) ...[
+              const SizedBox(height: 8),
+              Text(
+                "Ofitsiant: ${order.firstName}",
+                style: const TextStyle(fontSize: 13, color: AppColors.grey),
+              ),
+              Text(
+                "Vaqt: ${_formatDateTime(order.createdAt)}",
+                style: const TextStyle(fontSize: 13, color: AppColors.grey),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                "Mahsulotlar:",
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...order.items.map(
+                (item) => Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.lightGrey,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          "${item.name ?? 'Mahsulot'} x${item.quantity}",
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                      if (item.price != null)
+                        Text(
+                          "${NumberFormat('#,##0', 'uz').format(item.price! * item.quantity)} so'm",
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.accent,
+                          ),
+                        ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.delete,
+                          color: AppColors.error,
+                          size: 20,
+                        ),
+                        onPressed:
+                            isOwnOrder
+                                ? () => showCancelDialog(
+                                  order.id,
+                                  item.foodId,
+                                  order.items.indexOf(item),
+                                  order,
+                                )
+                                : null,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppColors.error.withOpacity(0.08),
+                  color: AppColors.accent.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.payments, color: AppColors.accent, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          "Jami:",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      "${NumberFormat('#,##0', 'uz').format(order.totalPrice)} so'm",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: AppColors.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              // YANGI: Mahsulot qo'shish va Zakazni yopish tugmalari
+              Row(
+                children: [
+                  // Mahsulot qo'shish tugmasi
+                  Expanded(
+                    child: SizedBox(
+                      height: 44,
+                      child:
+                          order.isProcessing
+                              ? Container(
+                                decoration: BoxDecoration(
+                                  color: AppColors.lightGrey,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: AppColors.primary,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                              : ElevatedButton.icon(
+                                onPressed: () => _showAddItemsDialog(order),
+                                icon: const Icon(
+                                  Icons.add_shopping_cart,
+                                  size: 18,
+                                ),
+                                label: const Text(
+                                  "Qo'shish",
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: AppColors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Zakazni yopish tugmasi
+                  Expanded(
+                    child: SizedBox(
+                      height: 44,
+                      child:
+                          order.isProcessing
+                              ? Container(
+                                decoration: BoxDecoration(
+                                  color: AppColors.lightGrey,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: AppColors.primary,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                              : ElevatedButton.icon(
+                                onPressed: () => _closeOrder(order),
+                                icon: const Icon(Icons.check_circle, size: 18),
+                                label: const Text(
+                                  "Yopish",
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.accent,
+                                  foregroundColor: AppColors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // 🆕 Ko‘chirish tugmasi
+                  Expanded(
+                    child: SizedBox(
+                      height: 44,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _showMoveTableDialog(order),
+                        icon: const Icon(Icons.swap_horiz, size: 18),
+                        label: const Text("Ko'chirish"),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          foregroundColor: AppColors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: AppColors.error.withOpacity(0.3)),
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.lock, size: 18, color: AppColors.error),
-                    SizedBox(width: 8),
+                    Icon(Icons.lock, size: 20, color: AppColors.error),
+                    SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        "Bu zakaz boshqa ofitsiantga tegishli – tahrirlab bo'lmaydi",
-                        style: TextStyle(fontSize: 12, color: AppColors.error),
+                        "Bu zakaz boshqa ofitsiantga tegishli",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.error,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
                   ],
@@ -2599,11 +1973,8 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<void> _showMoveTableDialog(Order order) async {
-    // Faqat tanlangan zalning stollari ichidan bo'shlarini olish
     final emptyTables =
-        _getSelectedHallTables()
-            .where((t) => !(_tableOccupiedStatus[t.id] ?? false))
-            .toList();
+        _tables.where((t) => !(_tableOccupiedStatus[t.id] ?? false)).toList();
 
     if (emptyTables.isEmpty) {
       showCenterSnackBar(context, "Bo'sh stollar yo'q", color: Colors.red);
@@ -2623,9 +1994,7 @@ class _PosScreenState extends State<PosScreen> {
                 emptyTables.map((table) {
                   return DropdownMenuItem(
                     value: table.id,
-                    child: Text(
-                      "Stol ${table.name}",
-                    ), // 🔹 TableModel.name ishlatildi
+                    child: Text("Stol ${table.number}"),
                   );
                 }).toList(),
             onChanged: (value) {
@@ -2656,6 +2025,7 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
+  // Mahsulot qo'shish dialogini ko'rsatish metodi
   void _showAddItemsDialog(Order order) {
     showDialog(
       context: context,
@@ -2663,33 +2033,17 @@ class _PosScreenState extends State<PosScreen> {
       builder: (BuildContext context) {
         return Dialog.fullscreen(
           child: OrderScreenContent(
-            formatted_order_number: order.formatted_order_number,
+            formatted_order_number:
+                order.formatted_order_number, // YANGI qo'shildi
             tableId: order.tableId,
             tableName: _selectedTableName,
             user: widget.user,
             token: widget.token,
-            isAddingToExistingOrder: true,
-            existingOrderId: order.tableId,
+            isAddingToExistingOrder: true, // YANGI parametr
+            existingOrderId: order.id, // YANGI parametr
             onOrderCreated: () async {
-              print("🔄 onOrderCreated callback ishga tushdi");
-
-              // MUHIM: UI'ni darhol yangilash
-              if (mounted) {
-                // 1. Cache'ni tozalash
-                _ordersCache.clear();
-
-                // 2. Tanlangan stolning orderlarini qayta yuklash
-                await _fetchOrdersForTable(_selectedTableId!);
-
-                // 3. Stol statuslarini yangilash
-                await _checkTableStatusesRealTime();
-                await _updateLocalTableStatuses();
-
-                // 4. UI'ni majburiy yangilash
-                setState(() {});
-
-                print("✅ UI muvaffaqiyatli yangilandi");
-              }
+              _fetchOrdersForTable(_selectedTableId!);
+              _checkTableStatuses();
             },
           ),
         );

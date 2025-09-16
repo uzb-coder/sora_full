@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer';
 import 'dart:ui' as ui;
 import 'dart:ffi';
 import 'dart:io';
@@ -14,12 +15,9 @@ import 'package:image/image.dart' as img;
 import 'package:win32/win32.dart';
 import 'package:sora/Global/Api_global.dart';
 import 'package:top_snackbar_flutter/top_snack_bar.dart';
-import '../../Admin/Page/Zall_page.dart';
-import '../../DB/Servis/db_helper.dart';
-import '../../DB/Servis/sync_service.dart';
 import '../../Offisant/Page/Users_page.dart';
 import '../Model/KassirModel.dart';
-import 'dart:ffi' hide Size;
+import 'dart:ffi' hide Size; // Size ni dart:ffi dan yashirish
 
 class UsbPrinterService {
   Future<List<String>> getConnectedPrinters() async {
@@ -58,9 +56,9 @@ class UsbPrinterService {
 
         for (var i = 0; i < count; i++) {
           final printerName =
-          printerInfo.elementAt(i).ref.pPrinterName.toDartString();
+              printerInfo.elementAt(i).ref.pPrinterName.toDartString();
           final portName =
-          printerInfo.elementAt(i).ref.pPortName.toDartString();
+              printerInfo.elementAt(i).ref.pPortName.toDartString();
 
           print("🖨️ Printer: $printerName, Port: $portName");
 
@@ -136,9 +134,9 @@ class UsbPrinterService {
   }
 
   Future<bool> _printToSpecificPrinter(
-      PendingOrder order,
-      String printerName,
-      ) async {
+    PendingOrder order,
+    String printerName,
+  ) async {
     final hPrinter = calloc<HANDLE>();
     final docInfo = calloc<DOC_INFO_1>();
 
@@ -280,7 +278,6 @@ class UsbPrinterService {
       // LOGO (512px, markazda)
       ...centeredLogo,
       // Logo va matn orasida bo'sh joy yo'q
-      0x1B, 0x45, 0x01, // Qalin shrift
       ...centerText("Namangan shahri, Namangan tumani"),
       ...centerText("Tel: +998 99 003 09 80"),
       ...centerText("----------------------------------"),
@@ -289,20 +286,30 @@ class UsbPrinterService {
       0x1B, 0x21, 0x20, // Katta shrift
       0x1B, 0x45, 0x01, // Qalin shrift
       ...centerText("BUYURTMA CHEKI"),
-      0x1B, 0x21, 0x00, // Oddiy shrift hajmi (qalin qoladi)
+      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
+      0x1B, 0x21, 0x00, // Oddiy shriftga qaytish
       0x0A, // Bo'sh qator
       // Sana va vaqt
       ...centerText(printDateTime),
       ...centerText("----------------------------------"),
+      0x1B, 0x45, 0x01, // Qalin shrift
       ...leftAlignText(
         "       Buyurtma: ${order.formattedOrderNumber ?? order.orderNumber}",
       ),
       ...leftAlignText("       Stol: ${order.tableName ?? 'N/A'}"),
       ...leftAlignText("       Ofitsiant: ${order.waiterName ?? 'N/A'}"),
+      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
       ...centerText("----------------------------------"),
 
-      // MAHSULOTLAR SARLAVHASI olib tashlandi ❌
-      // faqat ro‘yxat qoldi
+      // MAHSULOTLAR SARLAVHASI
+      0x1B, 0x21, 0x10, // O'rta shrift
+      0x1B, 0x45, 0x01, // Qalin shrift
+      ...centerText("MAHSULOTLAR"),
+      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
+      0x1B, 0x21, 0x00, // Oddiy shrift
+      ...centerText("----------------------------------"),
+
+      // Mahsulotlar ro'yxati (markazda)
       ...buildItemsList(order.items),
 
       ...centerText("----------------------------------"),
@@ -315,26 +322,28 @@ class UsbPrinterService {
         "Xizmat haqi (${order.percentage}%): ${formatNumber(order.serviceAmount)} so'm",
       ),
 
+      // Hisob-kitob (servicefee va subtotal bo'lmasa faqat totalPrice)
+      0x1B, 0x21, 0x00, // Oddiy shrift
       // Qo'shimcha bo'shliq
-      0x0A,
-      0x0A,
-
+      0x0A, // Xizmat haqi va jami o'rtasida bo'shliq
+      0x0A, // Qo'shimcha bo'shliq
       // Yakuniy summa (katta va qalin)
       0x1B, 0x21, 0x20, // Katta shrift
       0x1B, 0x45, 0x01, // Qalin shrift
       ...centerText("JAMI: ${formatNumber(order.totalPrice)} so'm"),
-      0x1B, 0x21, 0x00,
+      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
+      0x1B, 0x21, 0x00, // Oddiy shrift
       ...centerText("----------------------------------"),
 
       // Rahmat xabari
-      0x1B, 0x21, 0x20,
-      0x1B, 0x45, 0x01,
+      0x1B, 0x21, 0x20, // Katta shrift
+      0x1B, 0x45, 0x01, // Qalin shrift
       ...centerText("TASHRIFINGIZ UCHUN"),
       ...centerText("RAHMAT!"),
-      0x1B, 0x21, 0x00,
-      0x0A,
-      0x0A,
-
+      0x1B, 0x45, 0x00, // Qalin shriftni o'chirish
+      0x1B, 0x21, 0x00, // Oddiy shrift
+      0x0A, // Bo'sh qator
+      0x0A, // Bo'sh qator
       // Chekni kesish
       0x1B, 0x64, 0x06, // 6 ta bo'sh qator
       0x1D, 0x56, 0x00, // Kesish
@@ -360,8 +369,8 @@ class UsbPrinterService {
       // Bo'sh joylar sonini hisoblash
       int spaceCount =
           lineLength -
-              utf8.encode(namePart).length -
-              utf8.encode(qtyTotal).length;
+          utf8.encode(namePart).length -
+          utf8.encode(qtyTotal).length;
       if (spaceCount < 1) spaceCount = 1;
 
       line += ' ' * spaceCount + qtyTotal;
@@ -402,7 +411,7 @@ class UsbPrinterService {
     final numStr = number.toString().split('.');
     return numStr[0].replaceAllMapped(
       RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-          (Match m) => '${m[1]} ',
+      (Match m) => '${m[1]} ',
     );
   }
 }
@@ -427,74 +436,22 @@ class _FastUnifiedPendingPaymentsPageState
   List<PendingOrder> openOrders = [];
   List<PendingOrder> closedOrders = [];
   Timer? _refreshTimer;
+  Timer? _timer;
   bool _disposed = false;
   final UsbPrinterService _printerService =
-  UsbPrinterService(); // Bu qatorni qo'shing
-  Map<String, String> _tableToHallMap = {}; // Table ID -> Hall Name
-  bool _hallsLoaded = false;
-
-
-  Timer? _pollTimer;   // UI ma'lumotlarini yangilash (5s)
-  Timer? _syncTimer;   // server bilan sync (1m)
-
+      UsbPrinterService(); // Bu qatorni qo'shing
 
   @override
   void initState() {
     super.initState();
     _loadData();
-    _loadHalls();
-
-    // UI polling (ixtiyoriy)
-    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    // Polling interval 5 soniya - real-time ga yaqinlashtirildi
+    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (!_disposed) _refreshData();
     });
-
-    // 🔁 Umumiy sync (create -> items -> cancel -> close -> pay)
-    _syncTimer = Timer.periodic(const Duration(minutes: 1), (_) async {
-      await SyncService.syncAll(widget.token);
-    });
   }
 
-  @override
-  void dispose() {
-    _disposed = true;
-    _pollTimer?.cancel();
-    _syncTimer?.cancel();
-    super.dispose();
-  }
-
-
-  Future<void> _loadHalls() async {
-    if (_hallsLoaded) return;
-
-    try {
-      final halls = await HallController.getHalls(widget.token);
-      final Map<String, String> tempMap = {};
-
-      for (final hall in halls) {
-        for (final table in hall.tables) {
-          tempMap[table.id] = hall.name;
-        }
-      }
-
-      setState(() {
-        _tableToHallMap = tempMap;
-        _hallsLoaded = true;
-      });
-    } catch (e) {
-      debugPrint('Hall ma\'lumotlarini yuklashda xatolik: $e');
-    }
-  }
-
-  String _getHallName(PendingOrder order) {
-    // Agar order da table_id bor bo'lsa
-    final tableId = order.id; // yoki boshqa table identifier
-
-    // Table ID orqali hall nomini topish
-    return _tableToHallMap[tableId] ?? 'Noma\'lum zal';
-  }
-
-  static const String baseUrl = '${ApiConfig.baseUrl}';
+  static const String baseUrl = ApiConfig.baseUrl;
   static String? _token;
   static final Map<String, CachedData> _cache = {};
   static DateTime _lastFetch = DateTime(2000);
@@ -506,61 +463,10 @@ class _FastUnifiedPendingPaymentsPageState
     return _token;
   }
 
-  Future<void> syncClosedOrdersAndPayments(String token) async {
-    try {
-      final db = await DBHelper.database;
-      final rows = await db.query(
-        'orders',
-        where: '(status = ? OR status = ?) AND is_synced = 0',
-        whereArgs: ['closed', 'paid'],
-      );
-
-      for (final row in rows) {
-        final orderId = row['id'] as String;
-        final paymentMethod = row['payment_method'] ?? 'cash';
-        final paymentAmount = row['payment_amount'] ?? 0;
-
-        final body = {
-          "paymentMethod": paymentMethod,
-          "paymentAmount": paymentAmount,
-          "orderId": orderId,
-        };
-
-        try {
-          final response = await http.post(
-            Uri.parse('${ApiConfig.baseUrl}/kassir/payment/$orderId'),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode(body),
-          );
-
-          if (response.statusCode == 200) {
-            await db.update(
-              'orders',
-              {'is_synced': 1},
-              where: 'id = ?',
-              whereArgs: [orderId],
-            );
-            debugPrint("✅ Serverga yuborildi: $orderId");
-          } else {
-            debugPrint("❌ Server xato [${response.statusCode}]: ${response.body}");
-          }
-        } catch (e) {
-          debugPrint("🌐 Internet yo‘q, sync qoldi: $e");
-        }
-      }
-    } catch (e, st) {
-      debugPrint("❌ syncClosedOrdersAndPayments xato: $e\n$st");
-    }
-  }
-
-
   Future<Map<String, List<PendingOrder>>> fetchAllOrdersFast() async {
     final now = DateTime.now();
 
-    // Cache check
+    // Cache check - 30 soniya ichida qayta chaqirmaydi
     if (_cache.containsKey('pending') &&
         _cache.containsKey('closed') &&
         !_cache['pending']!.isExpired &&
@@ -571,108 +477,75 @@ class _FastUnifiedPendingPaymentsPageState
       };
     }
 
-    List<PendingOrder> pendingOrders = [];
-    List<PendingOrder> closedOrders = [];
-
     try {
+      // Widget orqali uzatilgan token ishlatish
       final kassirToken = widget.token;
+      log("Token: $kassirToken");
+      // PARALLEL API CALLS - 2 ta API ni bir vaqtda
+      final results = await Future.wait([
+        http.get(
+          Uri.parse('$baseUrl/orders/my-pending'),
+          headers: {
+            'Authorization': 'Bearer $kassirToken',
+            'Content-Type': 'application/json',
+          },
+        ),
+        http.get(
+          Uri.parse('$baseUrl/orders/pending-payments'),
+          headers: {
+            'Authorization': 'Bearer $kassirToken',
+            'Content-Type': 'application/json',
+          },
+        ),
+      ], eagerError: false);
 
-      // 1️⃣ Localdan ochiq zakazlar
-      List<PendingOrder> localPending = [];
-      try {
-        final localRows = await DBHelper.getPendingOrders();
-        debugPrint("📦 Localdan ${localRows.length} ta pending order olindi");
-        localPending =
-            localRows.map((e) => PendingOrder.fromJson(e)).toList();
-      } catch (e, st) {
-        debugPrint("❌ Local pending xato: $e\n$st");
+      List<PendingOrder> pendingOrders = [];
+      List<PendingOrder> closedOrders = [];
+
+      // Pending orders parse
+      if (results[0].statusCode == 200) {
+        final data = jsonDecode(results[0].body);
+        final orders =
+            (data is Map && data['orders'] is List
+                ? data['orders'] as List
+                : data is List
+                ? data
+                : []);
+        pendingOrders =
+            orders
+                .map(
+                  (orderJson) =>
+                      PendingOrder.fromJson(orderJson as Map<String, dynamic>),
+                )
+                .toList();
+      }
+      // Closed orders parse
+      if (results[1].statusCode == 200) {
+        final data = jsonDecode(results[1].body);
+        final orders =
+            (data is Map && data['pending_orders'] is List
+                ? data['pending_orders'] as List
+                : data is List
+                ? data
+                : []);
+        closedOrders =
+            orders
+                .map(
+                  (orderJson) =>
+                      PendingOrder.fromJson(orderJson as Map<String, dynamic>),
+                )
+                .toList();
       }
 
-      // 2️⃣ Localdan yopiq zakazlar
-      List<PendingOrder> localClosed = [];
-      try {
-        final localRows = await DBHelper.getClosedOrders();
-        debugPrint("📦 Localdan ${localRows.length} ta closed order olindi");
-        localClosed =
-            localRows.map((e) => PendingOrder.fromJson(e)).toList();
-      } catch (e, st) {
-        debugPrint("❌ Local closed xato: $e\n$st");
-      }
-
-      // 3️⃣ Serverdan pending va closed
-      List<PendingOrder> serverPending = [];
-      List<PendingOrder> serverClosed = [];
-
-      try {
-        final responses = await Future.wait([
-          http.get(
-            Uri.parse('$baseUrl/orders/my-pending'),
-            headers: {
-              'Authorization': 'Bearer $kassirToken',
-              'Content-Type': 'application/json',
-            },
-          ),
-          http.get(
-            Uri.parse('$baseUrl/orders/pending-payments'),
-            headers: {
-              'Authorization': 'Bearer $kassirToken',
-              'Content-Type': 'application/json',
-            },
-          ),
-        ], eagerError: false);
-
-        // my-pending
-        final pendingResp = responses[0];
-        if (pendingResp.statusCode == 200) {
-          final data = jsonDecode(pendingResp.body);
-          final orders = (data is Map && data['orders'] is List)
-              ? data['orders'] as List
-              : (data is List ? data : []);
-          debugPrint("🌍 Serverdan ${orders.length} ta pending order olindi");
-          serverPending = orders
-              .map((o) => PendingOrder.fromJson(o as Map<String, dynamic>))
-              .toList();
-        }
-
-        // pending-payments
-        final closedResp = responses[1];
-        if (closedResp.statusCode == 200) {
-          final data = jsonDecode(closedResp.body);
-          final orders = (data is Map && data['pending_orders'] is List)
-              ? data['pending_orders'] as List
-              : (data is List ? data : []);
-          debugPrint("🌍 Serverdan ${orders.length} ta closed order olindi");
-          serverClosed = orders
-              .map((o) => PendingOrder.fromJson(o as Map<String, dynamic>))
-              .toList();
-        }
-      } catch (e, st) {
-        debugPrint("❌ Server fetch xato: $e\n$st");
-      }
-
-      // 4️⃣ Merge: Local + Server → dublikatlar yo‘q
-      pendingOrders = _mergeOrders(localPending, serverPending);
-      closedOrders = _mergeOrders(localClosed, serverClosed);
-
-      // Sort: eng yangisi oldinda
-      pendingOrders.sort((a, b) =>
-          (DateTime.tryParse(b.createdAt) ?? DateTime(0))
-              .compareTo(DateTime.tryParse(a.createdAt) ?? DateTime(0)));
-      closedOrders.sort((a, b) =>
-          (DateTime.tryParse(b.createdAt) ?? DateTime(0))
-              .compareTo(DateTime.tryParse(a.createdAt) ?? DateTime(0)));
-
-      debugPrint(
-          "✅ Pending=${pendingOrders.length}, Closed=${closedOrders.length}");
-
-      // 5️⃣ Cache update
+      // Cache update
       _cache['pending'] = CachedData(pendingOrders, now);
       _cache['closed'] = CachedData(closedOrders, now);
       _lastFetch = now;
 
       return {'pending': pendingOrders, 'closed': closedOrders};
-    } catch (e, st) {
-      debugPrint("❌ Umumiy xato: $e\n$st");
+    } catch (e) {
+      debugPrint('Error fetching orders: $e');
+      // Eski cache qaytarish agar xatolik bo'lsa
       return {
         'pending': _cache['pending']?.data ?? [],
         'closed': _cache['closed']?.data ?? [],
@@ -680,50 +553,28 @@ class _FastUnifiedPendingPaymentsPageState
     }
   }
 
-  List<PendingOrder> _mergeOrders(
-      List<PendingOrder> local, List<PendingOrder> server) {
-    final Map<String, PendingOrder> merged = {};
-
-    // Server ustun
-    for (final s in server) {
-      merged[s.id] = s;
-    }
-
-    // Local qo‘shiladi, agar serverda yo‘q bo‘lsa
-    for (final l in local) {
-      if (l.id.isNotEmpty && !merged.containsKey(l.id)) {
-        merged[l.id] = l;
-      } else if (l.id.isEmpty) {
-        // Agar localda id bo‘sh bo‘lsa, vaqtinchalik uniq id qo‘shib qo‘yamiz
-        merged["local_${DateTime.now().microsecondsSinceEpoch}"] = l;
-      }
-    }
-
-    return merged.values.toList();
-  }
-
   Future<bool> closeOrderFast(
-      String orderId,
-      List<Map<String, dynamic>> items,
-      ) async {
+    String orderId,
+    List<Map<String, dynamic>> items,
+  ) async {
     try {
       final response = await http
           .put(
-        Uri.parse('$baseUrl/orders/close/$orderId'),
-        headers: {
-          'Authorization': 'Bearer ${widget.token}',
-          'Content-Type': 'application/json',
-        },
-      )
+            Uri.parse('$baseUrl/orders/close/$orderId'),
+            headers: {
+              'Authorization': 'Bearer ${widget.token}',
+              'Content-Type': 'application/json',
+            },
+          )
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         // Printer calls - parallel
         final uniquePrinterIPs =
-        items
-            .map((item) => item['printer_ip'] as String?)
-            .where((ip) => ip != null && ip.isNotEmpty)
-            .toSet();
+            items
+                .map((item) => item['printer_ip'] as String?)
+                .where((ip) => ip != null && ip.isNotEmpty)
+                .toSet();
 
         if (uniquePrinterIPs.isNotEmpty) {
           // Printer calls parallel - kutmaydi
@@ -745,37 +596,11 @@ class _FastUnifiedPendingPaymentsPageState
       return false;
     }
   }
-  Future<bool> processPaymentLocal(
-      PendingOrder order,
-      String paymentMethod,
-      double paymentAmount,
-      ) async {
-    try {
-      final db = await DBHelper.database;
-      await db.update(
-        'orders',
-        {
-          'status': 'paid',
-          'payment_method': paymentMethod,
-          'payment_amount': paymentAmount,
-          'is_synced': 0,
-          'updated_at': DateTime.now().toIso8601String(),
-        },
-        where: 'id = ?',
-        whereArgs: [order.id],
-      );
-      debugPrint("💰 To‘lov localda yozildi: ${order.id}, $paymentMethod, $paymentAmount");
-      return true;
-    } catch (e, st) {
-      debugPrint("❌ processPaymentLocal xato: $e\n$st");
-      return false;
-    }
-  }
 
   Future<Map<String, dynamic>> processPaymentFast(
-      String orderId,
-      Map<String, dynamic> paymentData,
-      ) async {
+    String orderId,
+    Map<String, dynamic> paymentData,
+  ) async {
     // _getToken() o'rniga widget.token ishlatamiz
     if (widget.token == null) {
       return {'success': false, 'message': 'Token topilmadi'};
@@ -784,13 +609,13 @@ class _FastUnifiedPendingPaymentsPageState
     try {
       final response = await http
           .post(
-        Uri.parse('$baseUrl/kassir/payment/$orderId'),
-        headers: {
-          'Authorization': 'Bearer ${widget.token}',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(paymentData),
-      )
+            Uri.parse('$baseUrl/kassir/payment/$orderId'),
+            headers: {
+              'Authorization': 'Bearer ${widget.token}',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(paymentData),
+          )
           .timeout(const Duration(seconds: 15));
 
       final data = jsonDecode(response.body);
@@ -800,7 +625,7 @@ class _FastUnifiedPendingPaymentsPageState
         return {
           'success': true,
           'message':
-          data['message']?.toString() ??
+              data['message']?.toString() ??
               'To‘lov muvaffaqiyatli amalga oshirildi',
           'data': data,
         };
@@ -809,7 +634,7 @@ class _FastUnifiedPendingPaymentsPageState
       return {
         'success': false,
         'message':
-        data['message']?.toString() ?? 'To‘lovni amalga oshirishda xato',
+            data['message']?.toString() ?? 'To‘lovni amalga oshirishda xato',
       };
     } catch (e) {
       debugPrint('To‘lovni amalga oshirishda xato: $e');
@@ -830,18 +655,18 @@ class _FastUnifiedPendingPaymentsPageState
     try {
       final response = await http
           .post(
-        Uri.parse('$baseUrl/orders/$orderId/cancel-item'),
-        headers: {
-          'Authorization': 'Bearer ${widget.token}',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'food_id': foodId,
-          'cancel_quantity': cancelQuantity,
-          'reason': reason,
-          'notes': notes,
-        }),
-      )
+            Uri.parse('$baseUrl/orders/$orderId/cancel-item'),
+            headers: {
+              'Authorization': 'Bearer ${widget.token}',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'food_id': foodId,
+              'cancel_quantity': cancelQuantity,
+              'reason': reason,
+              'notes': notes,
+            }),
+          )
           .timeout(const Duration(seconds: 10));
 
       final data = jsonDecode(response.body);
@@ -852,7 +677,7 @@ class _FastUnifiedPendingPaymentsPageState
         return {
           'success': true,
           'message':
-          data['message']?.toString() ?? 'Item cancelled successfully',
+              data['message']?.toString() ?? 'Item cancelled successfully',
         };
       }
 
@@ -870,10 +695,10 @@ class _FastUnifiedPendingPaymentsPageState
     try {
       await http
           .post(
-        Uri.parse('http://$printerIP:9100/'),
-        headers: {'Content-Type': 'text/plain'},
-        body: 'Order #$orderId Closed\n',
-      )
+            Uri.parse('http://$printerIP:9100/'),
+            headers: {'Content-Type': 'text/plain'},
+            body: 'Order #$orderId Closed\n',
+          )
           .timeout(const Duration(seconds: 3));
     } catch (e) {
       debugPrint('Printer error $printerIP: $e');
@@ -912,6 +737,12 @@ class _FastUnifiedPendingPaymentsPageState
         });
       }
     }
+
+    // Schedule the next refresh 10 seconds later
+    if (!_disposed) {
+      _timer?.cancel(); // cancel any previous timer
+      _timer = Timer(const Duration(seconds: 10), _loadData);
+    }
   }
 
   Future<void> _refreshData() async {
@@ -931,7 +762,12 @@ class _FastUnifiedPendingPaymentsPageState
     }
   }
 
-
+  @override
+  void dispose() {
+    _disposed = true;
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
 
   void _handleDateRangeChange(String key) {
     if (_disposed) return;
@@ -1020,7 +856,6 @@ class _FastUnifiedPendingPaymentsPageState
     }
   }
 
-// REPLACE _handleCloseOrder() with:
   Future<void> _handleCloseOrder() async {
     if (selectedOrder == null) {
       _showSnackBar('Avval zakazni tanlang!');
@@ -1028,29 +863,24 @@ class _FastUnifiedPendingPaymentsPageState
     }
 
     setState(() => isLoading = true);
-    try {
-      // 1) Localga saqlab (agar saqlanmagan bo‘lsa) va yopish
-      // 1.1) ixtiyoriy: serverdan kelgan obyektni localga "upsert"
-      // Agar PendingOrder.toJson() bo'lmasa, o'zingiz xarita tuzib yuboring.
-      // await DBHelper.upsertOrderFromPendingJson(selectedOrder!.toJson());
 
-      // 1.2) localda yopish
-      await DBHelper.closeOrderLocal(selectedOrder!.id);
+    final success = await closeOrderFast(
+      selectedOrder!.id,
+      selectedOrder!.items,
+    );
 
-      // 2) UI ni darhol ko‘chirish
+    if (!_disposed) {
       setState(() {
-        openOrders.removeWhere((o) => o.id == selectedOrder!.id);
-        closedOrders.insert(0, selectedOrder!);
         isLoading = false;
+        if (success) {
+          openOrders.removeWhere((order) => order.id == selectedOrder!.id);
+          selectedOrder = null;
+        } else {
+          _showSnackBar('Failed to close order');
+        }
       });
-
-      _showSnackBar('✅ Zakaz localda yopildi. Sync navbatda.');
-
-      // 3) fon yangilash
+      // Background refresh
       unawaited(_refreshData());
-    } catch (e) {
-      setState(() => isLoading = false);
-      _showSnackBar('❌ Zakazni yopishda xato: $e');
     }
   }
 
@@ -1062,215 +892,17 @@ class _FastUnifiedPendingPaymentsPageState
     setState(() => isPaymentModalVisible = true);
   }
 
-  // ADD these methods inside _FastUnifiedPendingPaymentsPageState:
-
-  Future<void> _syncAll(String token) async {
-    await _syncClosedOrders(token);
-    await _syncPaidOrders(token);
-  }
-
-// 1) YOPILGAN, lekin serverga yuborilmagan zakazlar
-  Future<void> _syncClosedOrders(String token) async {
-    try {
-      final db = await DBHelper.database;
-      final rows = await db.query(
-        'orders',
-        where: "status = 'closed' AND is_synced = 0",
-        orderBy: 'datetime(updated_at) ASC',
-        limit: 50,
-      );
-
-      for (final r in rows) {
-        final localId  = r['id'].toString();
-        final serverId = (r['server_id'] ?? '').toString();
-
-        if (serverId.isEmpty || serverId == 'null') {
-          debugPrint('⏭️ [SYNC CLOSE] skip $localId: server_id yo‘q (avval create sync kerak)');
-          continue; // <-- muhim
-        }
-
-        try {
-          final resp = await http
-              .put(
-            Uri.parse('${ApiConfig.baseUrl}/orders/close/$serverId'),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json',
-            },
-          )
-              .timeout(const Duration(seconds: 10));
-
-          if (resp.statusCode >= 200 && resp.statusCode < 300) {
-            await db.update('orders', {'is_synced': 1}, where: 'id = ?', whereArgs: [localId]);
-            debugPrint('✅ [SYNC CLOSE] OK: local=$localId -> server=$serverId');
-          } else {
-            debugPrint('❌ [SYNC CLOSE] $localId -> ${resp.statusCode}: ${resp.body}');
-          }
-        } catch (e) {
-          debugPrint('🌐 [SYNC CLOSE] offline: $e');
-        }
-      }
-    } catch (e, st) {
-      debugPrint('❌ _syncClosedOrders xato: $e\n$st');
-    }
-  }
-
-  Future<void> _syncPaidOrders(String token) async {
-    try {
-      final db = await DBHelper.database;
-      final rows = await db.query(
-        'orders',
-        where: "status = 'paid' AND is_synced = 0",
-        orderBy: 'datetime(updated_at) ASC',
-        limit: 50,
-      );
-
-      for (final r in rows) {
-        final localId  = r['id'].toString();
-        final serverId = (r['server_id'] ?? '').toString();
-
-        if (serverId.isEmpty || serverId == 'null') {
-          debugPrint('⏭️ [SYNC PAY] skip $localId: server_id yo‘q (avval create sync kerak)');
-          continue; // <-- muhim
-        }
-
-        final method  = (r['payment_method'] ?? 'cash').toString();
-        final amount  = ((r['payment_amount'] ?? 0) as num).toDouble();
-
-        final body = {
-          "paymentMethod": method,
-          "paymentAmount": amount,
-          "orderId": serverId, // ← diqqat: serverga ham server_id boradi
-        };
-
-        try {
-          final resp = await http
-              .post(
-            Uri.parse('${ApiConfig.baseUrl}/kassir/payment/$serverId'),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode(body),
-          )
-              .timeout(const Duration(seconds: 12));
-
-          if (resp.statusCode >= 200 && resp.statusCode < 300) {
-            await db.update('orders', {'is_synced': 1}, where: 'id = ?', whereArgs: [localId]);
-            debugPrint('✅ [SYNC PAY] OK: local=$localId -> server=$serverId');
-          } else {
-            debugPrint('❌ [SYNC PAY] $localId -> ${resp.statusCode}: ${resp.body}');
-          }
-        } catch (e) {
-          debugPrint('🌐 [SYNC PAY] offline: $e');
-        }
-      }
-    } catch (e, st) {
-      debugPrint('❌ _syncPaidOrders xato: $e\n$st');
-    }
-  }
-
-  Future<void> _syncNewOrders(String token) async {
-    try {
-      final db = await DBHelper.database;
-      final rows = await db.query(
-        'orders',
-        where: "(server_id IS NULL OR server_id = '') AND is_synced = 0",
-        limit: 50,
-      );
-
-      for (final r in rows) {
-        final localId = r['id'].toString();
-        final tableId = (r['table_id'] ?? '').toString();
-        final items   = await db.query('order_items', where: 'order_id = ?', whereArgs: [localId]);
-
-        // Payloadni backend talabiga moslang:
-        final payload = {
-          "table_id": tableId,
-          "items": items.map((it) => {
-            "food_id": it['food_id'],
-            "quantity": it['quantity'],
-            "price": it['price'],
-            // kerak bo‘lsa qo‘shimcha maydonlar
-          }).toList(),
-          // kerak bo‘lsa waiter, device, extId va h.k.
-        };
-
-        try {
-          // TODO: endpoint nomini aniq joyingizga moslang:
-          final resp = await http
-              .post(
-            Uri.parse('${ApiConfig.baseUrl}/orders'), // masalan
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode(payload),
-          )
-              .timeout(const Duration(seconds: 12));
-
-          if (resp.statusCode >= 200 && resp.statusCode < 300) {
-            final data = jsonDecode(resp.body);
-            final serverId = (data['_id'] ?? data['order']?['_id'] ?? '').toString();
-            if (serverId.isNotEmpty) {
-              await DBHelper.updateOrderServerId(localId, serverId);
-              debugPrint('✅ [SYNC CREATE] local=$localId -> server=$serverId');
-            } else {
-              debugPrint('❓ [SYNC CREATE] $localId: javobda _id yo‘q');
-            }
-          } else {
-            debugPrint('❌ [SYNC CREATE] $localId -> ${resp.statusCode}: ${resp.body}');
-          }
-        } catch (e) {
-          debugPrint('🌐 [SYNC CREATE] offline: $e');
-        }
-      }
-    } catch (e, st) {
-      debugPrint('❌ _syncNewOrders xato: $e\n$st');
-    }
-  }
-
-
-  Future<Map<String, dynamic>> _processPaymentHandler(Map<String, dynamic> apiPayload) async {
-    if (selectedOrder == null) {
-      return {'success': false, 'message': 'Zakaz tanlanmagan'};
-    }
-
-    final pd = apiPayload['paymentData'] as Map<String, dynamic>;
-    final String method = (pd['paymentMethod'] ?? 'cash').toString();
-
-    double amount = 0;
-    if (method == 'mixed') {
-      final mixed = (pd['mixedPayment'] as Map<String, dynamic>?);
-      amount = ((mixed?['totalAmount'] ?? 0) as num).toDouble();
-    } else {
-      amount = ((pd['paymentAmount'] ?? 0) as num).toDouble();
-    }
-
-    if (amount <= 0) {
-      return {'success': false, 'message': "To'lov summasi noto‘g‘ri"};
-    }
-
+  Future<Map<String, dynamic>> _processPaymentHandler(
+    Map<String, dynamic> apiPayload,
+  ) async {
     setState(() => isLoading = true);
-    try {
-      // DBHelper dagi mavjud (non-static) helperdan foydalanamiz
-      final ok = await DBHelper().processPaymentLocal(selectedOrder!, method, amount);
-
-      setState(() => isLoading = false);
-
-      if (ok) {
-        // UI: to‘lov qilingan buyurtmani ro‘yxatdan chiqarib yuboramiz
-        closedOrders.removeWhere((o) => o.id == selectedOrder!.id);
-        return {'success': true, 'message': "To'lov localga yozildi. Sync navbatda."};
-      } else {
-        return {'success': false, 'message': "Local yozishda xatolik"};
-      }
-    } catch (e) {
-      setState(() => isLoading = false);
-      return {'success': false, 'message': "Local to'lov xatosi: $e"};
-    }
+    final result = await processPaymentFast(
+      selectedOrder!.id,
+      apiPayload['paymentData'] as Map<String, dynamic>,
+    );
+    if (!_disposed) setState(() => isLoading = false);
+    return result;
   }
-
 
   void _handlePaymentSuccess(Map<String, dynamic> result) {
     if (_disposed || selectedOrder == null) return;
@@ -1291,7 +923,7 @@ class _FastUnifiedPendingPaymentsPageState
           child: Container(
             constraints: BoxConstraints(
               maxWidth:
-              MediaQuery.of(context).size.width *
+                  MediaQuery.of(context).size.width *
                   0.8, // ekran kengligining 80% gacha
               minWidth: 100, // minimal kenglik (ixtiyoriy)
             ),
@@ -1341,10 +973,10 @@ class _FastUnifiedPendingPaymentsPageState
   }
 
   Future<void> showCancelDialog(
-      String orderId,
-      String foodId,
-      int itemIndex,
-      ) async {
+    String orderId,
+    String foodId,
+    int itemIndex,
+  ) async {
     if (_disposed) return;
 
     String reason = "Mijoz bekor qildi"; // Default sabab
@@ -1443,15 +1075,15 @@ class _FastUnifiedPendingPaymentsPageState
                     ),
                   ),
                   items:
-                  reasons.map((r) {
-                    return DropdownMenuItem(
-                      value: r,
-                      child: Text(
-                        r,
-                        style: const TextStyle(color: Color(0xFF333333)),
-                      ),
-                    );
-                  }).toList(),
+                      reasons.map((r) {
+                        return DropdownMenuItem(
+                          value: r,
+                          child: Text(
+                            r,
+                            style: const TextStyle(color: Color(0xFF333333)),
+                          ),
+                        );
+                      }).toList(),
                   onChanged: (val) {
                     if (val != null) reason = val;
                   },
@@ -1538,13 +1170,13 @@ class _FastUnifiedPendingPaymentsPageState
   }
 
   Future<void> _deleteItem(
-      String orderId,
-      String foodId,
-      int itemIndex,
-      String reason,
-      String notes,
-      int cancelQuantity,
-      ) async {
+    String orderId,
+    String foodId,
+    int itemIndex,
+    String reason,
+    String notes,
+    int cancelQuantity,
+  ) async {
     setState(() => isLoading = true);
 
     final result = await cancelOrderItemFast(
@@ -1589,7 +1221,7 @@ class _FastUnifiedPendingPaymentsPageState
                 child: Container(
                   constraints: BoxConstraints(
                     maxWidth:
-                    MediaQuery.of(context).size.width *
+                        MediaQuery.of(context).size.width *
                         0.8, // ekran kengligining 80% gacha
                     minWidth: 100, // minimal kenglik (ixtiyoriy)
                   ),
@@ -1633,11 +1265,11 @@ class _FastUnifiedPendingPaymentsPageState
   Widget _buildOrderCard(PendingOrder order) {
     final isSelected = selectedOrder?.id == order.id;
     final rowColor =
-    isSelected
-        ? const Color(0xFFd4edda)
-        : selectedDateRange == 'closed'
-        ? const Color(0xFFffe6e6)
-        : _getStatusColor(order);
+        isSelected
+            ? const Color(0xFFd4edda)
+            : selectedDateRange == 'closed'
+            ? const Color(0xFFffe6e6)
+            : _getStatusColor(order);
 
     return InkWell(
       onTap: () => setState(() => selectedOrder = order),
@@ -1645,15 +1277,15 @@ class _FastUnifiedPendingPaymentsPageState
         decoration: BoxDecoration(
           color: rowColor,
           border:
-          isSelected
-              ? Border.all(color: const Color(0xFF28a745), width: 2)
-              : null,
+              isSelected
+                  ? Border.all(color: const Color(0xFF28a745), width: 2)
+                  : null,
         ),
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
         child:
-        selectedDateRange == 'open'
-            ? _buildOpenOrderRow(order)
-            : _buildClosedOrderRow(order),
+            selectedDateRange == 'open'
+                ? _buildOpenOrderRow(order)
+                : _buildClosedOrderRow(order),
       ),
     );
   }
@@ -1669,7 +1301,7 @@ class _FastUnifiedPendingPaymentsPageState
           flex: 1,
         ),
         _buildDataCell(order.waiterName ?? 'N/A', flex: 2),
-        _buildDataCell('${order.tableName ?? 'N/A'}\n', flex: 1),
+        _buildDataCell(order.tableName ?? 'N/A', flex: 1),
         _buildDataCell(
           NumberFormat().format(order.serviceAmount ?? 0),
           flex: 1,
@@ -1689,7 +1321,7 @@ class _FastUnifiedPendingPaymentsPageState
           order.formattedOrderNumber ?? order.orderNumber,
           flex: 1,
         ),
-        _buildDataCell('${order.tableName ?? 'N/A'}', flex: 1), // Zal qo'shildi
+        _buildDataCell(order.tableName ?? 'N/A', flex: 1),
         _buildDataCell(order.waiterName ?? 'N/A', flex: 1),
         _buildDataCell(order.items.length.toString(), flex: 1),
         _buildDataCell(
@@ -1790,13 +1422,13 @@ class _FastUnifiedPendingPaymentsPageState
                     IconButton(
                       icon: const Icon(Icons.delete, color: Colors.red),
                       onPressed:
-                      foodId.isEmpty
-                          ? null
-                          : () => showCancelDialog(
-                        selectedOrder!.id,
-                        foodId,
-                        index,
-                      ),
+                          foodId.isEmpty
+                              ? null
+                              : () => showCancelDialog(
+                                selectedOrder!.id,
+                                foodId,
+                                index,
+                              ),
                     ),
                   ],
                 ),
@@ -1853,55 +1485,55 @@ class _FastUnifiedPendingPaymentsPageState
                       padding: const EdgeInsets.all(8),
                       child: Row(
                         children:
-                        dateRangeButtons
-                            .map(
-                              (btn) => Expanded(
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(
-                                horizontal: 2,
-                              ),
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor:
-                                  selectedDateRange == btn['key']
-                                      ? const Color(0xFF28a745)
-                                      : const Color(0xFFf5f5f5),
-                                  foregroundColor:
-                                  selectedDateRange == btn['key']
-                                      ? Colors.white
-                                      : Colors.black,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(
-                                      0,
+                            dateRangeButtons
+                                .map(
+                                  (btn) => Expanded(
+                                    child: Container(
+                                      margin: const EdgeInsets.symmetric(
+                                        horizontal: 2,
+                                      ),
+                                      child: ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor:
+                                              selectedDateRange == btn['key']
+                                                  ? const Color(0xFF28a745)
+                                                  : const Color(0xFFf5f5f5),
+                                          foregroundColor:
+                                              selectedDateRange == btn['key']
+                                                  ? Colors.white
+                                                  : Colors.black,
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 12,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(
+                                              0,
+                                            ),
+                                            side: const BorderSide(
+                                              color: Color(0xFF999999),
+                                              width: 1,
+                                            ),
+                                          ),
+                                          elevation: 0,
+                                        ),
+                                        onPressed:
+                                            () => _handleDateRangeChange(
+                                              btn['key'] as String,
+                                            ),
+                                        child: Text(
+                                          btn['label'] as String,
+                                          textAlign: TextAlign.center,
+                                          style: const TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w900,
+                                            height: 1.2,
+                                          ),
+                                        ),
+                                      ),
                                     ),
-                                    side: const BorderSide(
-                                      color: Color(0xFF999999),
-                                      width: 1,
-                                    ),
                                   ),
-                                  elevation: 0,
-                                ),
-                                onPressed:
-                                    () => _handleDateRangeChange(
-                                  btn['key'] as String,
-                                ),
-                                child: Text(
-                                  btn['label'] as String,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w900,
-                                    height: 1.2,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        )
-                            .toList(),
+                                )
+                                .toList(),
                       ),
                     ),
                     Padding(
@@ -1987,103 +1619,103 @@ class _FastUnifiedPendingPaymentsPageState
                       color: Colors.grey[300],
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       child:
-                      selectedDateRange == 'closed'
-                          ? Row(
-                        children: [
-                          _buildHeaderCell('Сана', flex: 1),
-                          _buildHeaderCell('Вақт', flex: 1),
-                          _buildHeaderCell('Заказ ', flex: 1),
-                          _buildHeaderCell('Стол ', flex: 1),
-                          _buildHeaderCell('Официант ', flex: 1),
-                          _buildHeaderCell('Таомлар ', flex: 1),
-                          _buildHeaderCell('Жами', flex: 2),
-                        ],
-                      )
-                          : Row(
-                        children: [
-                          _buildHeaderCell('Сана', flex: 1),
-                          _buildHeaderCell('Вақт', flex: 1),
-                          _buildHeaderCell('Заказ', flex: 1),
-                          _buildHeaderCell('Официант', flex: 2),
-                          _buildHeaderCell('Стол', flex: 1),
-                          _buildHeaderCell(
-                            'Хизмат ҳақи',
-                            flex: 1,
-                          ), // New column
-                          _buildHeaderCell('Жами', flex: 2),
-                        ],
-                      ),
+                          selectedDateRange == 'closed'
+                              ? Row(
+                                children: [
+                                  _buildHeaderCell('Сана', flex: 1),
+                                  _buildHeaderCell('Вақт', flex: 1),
+                                  _buildHeaderCell('Заказ ', flex: 1),
+                                  _buildHeaderCell('Стол ', flex: 1),
+                                  _buildHeaderCell('Официант ', flex: 1),
+                                  _buildHeaderCell('Таомлар ', flex: 1),
+                                  _buildHeaderCell('Жами', flex: 2),
+                                ],
+                              )
+                              : Row(
+                                children: [
+                                  _buildHeaderCell('Сана', flex: 1),
+                                  _buildHeaderCell('Вақт', flex: 1),
+                                  _buildHeaderCell('Заказ', flex: 1),
+                                  _buildHeaderCell('Официант', flex: 2),
+                                  _buildHeaderCell('Стол', flex: 1),
+                                  _buildHeaderCell(
+                                    'Хизмат ҳақи',
+                                    flex: 1,
+                                  ), // New column
+                                  _buildHeaderCell('Жами', flex: 2),
+                                ],
+                              ),
                     ),
                     Expanded(
                       child: Container(
                         color: Colors.white,
                         child:
-                        isLoading
-                            ? const Center(
-                          child: CircularProgressIndicator(),
-                        )
-                            : errorMessage != null
-                            ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(errorMessage!),
-                              const SizedBox(height: 16),
-                              ElevatedButton(
-                                onPressed: () {
-                                  clearCache();
-                                  _loadData();
-                                },
-                                child: const Text('Refresh'),
-                              ),
-                            ],
-                          ),
-                        )
-                            : currentData.isEmpty
-                            ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                selectedDateRange == 'open'
-                                    ? Icons.restaurant_menu
-                                    : Icons.payment,
-                                size: 64,
-                                color: Colors.grey[400],
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                selectedDateRange == 'open'
-                                    ? "Hozircha ochiq zakazlar yo'q"
-                                    : "To'lov kutayotgan zakazlar yo'q",
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  color: Colors.grey[600],
+                            isLoading
+                                ? const Center(
+                                  child: CircularProgressIndicator(),
+                                )
+                                : errorMessage != null
+                                ? Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Text(errorMessage!),
+                                      const SizedBox(height: 16),
+                                      ElevatedButton(
+                                        onPressed: () {
+                                          clearCache();
+                                          _loadData();
+                                        },
+                                        child: const Text('Refresh'),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                                : currentData.isEmpty
+                                ? Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        selectedDateRange == 'open'
+                                            ? Icons.restaurant_menu
+                                            : Icons.payment,
+                                        size: 64,
+                                        color: Colors.grey[400],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        selectedDateRange == 'open'
+                                            ? "Hozircha ochiq zakazlar yo'q"
+                                            : "To'lov kutayotgan zakazlar yo'q",
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      ElevatedButton(
+                                        onPressed: () {
+                                          clearCache();
+                                          _loadData();
+                                        },
+                                        child: const Text('Yangilash'),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                                : RefreshIndicator(
+                                  onRefresh: () async {
+                                    clearCache();
+                                    await _loadData();
+                                  },
+                                  child: ListView.builder(
+                                    itemCount: currentData.length,
+                                    itemBuilder:
+                                        (context, index) =>
+                                            _buildOrderCard(currentData[index]),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 16),
-                              ElevatedButton(
-                                onPressed: () {
-                                  clearCache();
-                                  _loadData();
-                                },
-                                child: const Text('Yangilash'),
-                              ),
-                            ],
-                          ),
-                        )
-                            : RefreshIndicator(
-                          onRefresh: () async {
-                            clearCache();
-                            await _loadData();
-                          },
-                          child: ListView.builder(
-                            itemCount: currentData.length,
-                            itemBuilder:
-                                (context, index) =>
-                                _buildOrderCard(currentData[index]),
-                          ),
-                        ),
                       ),
                     ),
                     Container(
@@ -2104,13 +1736,13 @@ class _FastUnifiedPendingPaymentsPageState
                                 ElevatedButton(
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor:
-                                    selectedOrder != null
-                                        ? const Color(0xFF28a745)
-                                        : const Color(0xFFf5f5f5),
+                                        selectedOrder != null
+                                            ? const Color(0xFF28a745)
+                                            : const Color(0xFFf5f5f5),
                                     foregroundColor:
-                                    selectedOrder != null
-                                        ? Colors.white
-                                        : Colors.black,
+                                        selectedOrder != null
+                                            ? Colors.white
+                                            : Colors.black,
                                     minimumSize: const ui.Size(120, 70),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(10),
@@ -2123,9 +1755,9 @@ class _FastUnifiedPendingPaymentsPageState
                                     shadowColor: Colors.black.withOpacity(0.2),
                                   ),
                                   onPressed:
-                                  selectedOrder != null
-                                      ? _handleCloseOrder
-                                      : null,
+                                      selectedOrder != null
+                                          ? _handleCloseOrder
+                                          : null,
                                   child: const Text(
                                     "Заказни ёпиш",
                                     style: TextStyle(
@@ -2173,11 +1805,11 @@ class _FastUnifiedPendingPaymentsPageState
                                 text: 'Выход',
                                 onPressed:
                                     () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => UserListPage(),
-                                  ),
-                                ),
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => UserListPage(),
+                                      ),
+                                    ),
                               ),
                             ],
                           ),
@@ -2271,7 +1903,7 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _notesController = TextEditingController();
   final TextEditingController _paymentAmountController =
-  TextEditingController();
+      TextEditingController();
   final TextEditingController _cashAmountController = TextEditingController();
   final TextEditingController _cardAmountController = TextEditingController();
   final NumberFormat _currencyFormat = NumberFormat.currency(
@@ -2506,7 +2138,7 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                 selected: _paymentMethod == 'cash',
                                 onSelected:
                                     (selected) =>
-                                    _handlePaymentMethodChange('cash'),
+                                        _handlePaymentMethodChange('cash'),
                               ),
                               ChoiceChip(
                                 label: const Text(
@@ -2516,7 +2148,7 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                 selected: _paymentMethod == 'card',
                                 onSelected:
                                     (selected) =>
-                                    _handlePaymentMethodChange('card'),
+                                        _handlePaymentMethodChange('card'),
                               ),
                               ChoiceChip(
                                 label: const Text(
@@ -2526,7 +2158,7 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                 selected: _paymentMethod == 'click',
                                 onSelected:
                                     (selected) =>
-                                    _handlePaymentMethodChange('click'),
+                                        _handlePaymentMethodChange('click'),
                               ),
                               ChoiceChip(
                                 label: const Text(
@@ -2536,7 +2168,7 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                 selected: _paymentMethod == 'mixed',
                                 onSelected:
                                     (selected) =>
-                                    _handlePaymentMethodChange('mixed'),
+                                        _handlePaymentMethodChange('mixed'),
                               ),
                             ],
                           ),
@@ -2557,10 +2189,10 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                         controller: _paymentAmountController,
                                         keyboardType: TextInputType.number,
                                         enabled:
-                                        ![
-                                          'card',
-                                          'click',
-                                        ].contains(_paymentMethod),
+                                            ![
+                                              'card',
+                                              'click',
+                                            ].contains(_paymentMethod),
                                         decoration: const InputDecoration(
                                           hintText: 'Summa',
                                           border: OutlineInputBorder(),
@@ -2575,7 +2207,7 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                                 value?.replaceAll(',', '') ??
                                                     '',
                                               ) ??
-                                                  0;
+                                              0;
                                           if (amount <= 0) {
                                             return "To'lov summasi 0 dan katta bo'lishi kerak!";
                                           }
@@ -2590,12 +2222,12 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                               double.tryParse(
                                                 value.replaceAll(',', '') ?? '',
                                               ) ??
-                                                  0;
+                                              0;
                                           setState(() {
                                             _paymentAmount = amount;
                                             if (_paymentMethod == 'cash') {
                                               _changeAmount = (amount -
-                                                  _orderTotal)
+                                                      _orderTotal)
                                                   .clamp(0, double.infinity);
                                             }
                                           });
@@ -2614,10 +2246,10 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                             labelText: 'Qaytim',
                                             border: OutlineInputBorder(),
                                             contentPadding:
-                                            EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 8,
-                                            ),
+                                                EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 8,
+                                                ),
                                           ),
                                         ),
                                       ),
@@ -2676,7 +2308,7 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                           double.tryParse(
                                             value?.replaceAll(',', '') ?? '',
                                           ) ??
-                                              0;
+                                          0;
                                       if (amount <= 0)
                                         return "Naqd summa 0'dan katta bo'lishi kerak!";
                                       return null;
@@ -2686,7 +2318,7 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                           double.tryParse(
                                             value.replaceAll(',', '') ?? '',
                                           ) ??
-                                              0;
+                                          0;
                                       setState(() {
                                         _cashAmount = amount;
                                         final total = amount + _cardAmount;
@@ -2714,7 +2346,7 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                           double.tryParse(
                                             value?.replaceAll(',', '') ?? '',
                                           ) ??
-                                              0;
+                                          0;
                                       if (amount <= 0)
                                         return "Karta summa 0'dan katta bo'lishi kerak!";
                                       return null;
@@ -2724,7 +2356,7 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                           double.tryParse(
                                             value.replaceAll(',', '') ?? '',
                                           ) ??
-                                              0;
+                                          0;
                                       setState(() {
                                         _cardAmount = amount;
                                         final total = _cashAmount + amount;
@@ -2766,7 +2398,7 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                               children: [
                                 Row(
                                   mainAxisAlignment:
-                                  MainAxisAlignment.spaceBetween,
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     const Text(
                                       'Jami to\'lov:',
@@ -2787,7 +2419,7 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                 const SizedBox(height: 4),
                                 Row(
                                   mainAxisAlignment:
-                                  MainAxisAlignment.spaceBetween,
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     const Text(
                                       'Kerakli:',
@@ -2800,12 +2432,12 @@ class _FastPaymentModalState extends State<FastPaymentModal> {
                                   ],
                                 ),
                                 if ((_paymentMethod == 'cash' ||
-                                    _paymentMethod == 'mixed') &&
+                                        _paymentMethod == 'mixed') &&
                                     _changeAmount > 0) ...[
                                   const SizedBox(height: 4),
                                   Row(
                                     mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       const Text(
                                         'Qaytim:',

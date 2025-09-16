@@ -9,7 +9,7 @@ import 'Kassr_page.dart';
 class KassirPage extends StatefulWidget {
   final User user;
   final token;
-  const KassirPage({super.key, required this.user, this.token,});
+  const KassirPage({super.key, required this.user, this.token});
 
   @override
   _KassirPageState createState() => _KassirPageState();
@@ -42,9 +42,11 @@ class _KassirPageState extends State<KassirPage> {
   // Load user data from SharedPreferences
   Future<void> _loadUser() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _firstName = prefs.getString('first_name') ?? 'Kassir';
-    });
+    if (mounted) {
+      setState(() {
+        _firstName = prefs.getString('first_name') ?? 'Kassir';
+      });
+    }
   }
 
   // Format date in Russian locale
@@ -72,7 +74,9 @@ class _KassirPageState extends State<KassirPage> {
               left: 10,
               child: ElevatedButton(
                 style: _buttonStyle.copyWith(
-                  backgroundColor: WidgetStateProperty.all(const Color(0xFFF0F0F0)),
+                  backgroundColor: WidgetStateProperty.all(
+                    const Color(0xFFF0F0F0),
+                  ),
                   side: WidgetStateProperty.all(
                     const BorderSide(color: Color(0xFF999999), width: 2),
                   ),
@@ -178,12 +182,30 @@ class _KassirPageState extends State<KassirPage> {
                     _buildButton(
                       label: 'Все счета',
                       onPressed: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (context) => FastUnifiedPendingPaymentsPage1(token: widget.token,)));
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder:
+                                (context) => FastUnifiedPendingPaymentsPage1(
+                                  token: widget.token,
+                                ),
+                          ),
+                        );
                       },
-                    ),         _buildButton(
+                    ),
+                    _buildButton(
                       label: 'Шот',
                       onPressed: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (context) => PosScreen(user: widget.user, token: widget.token,)));
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder:
+                                (context) => PosScreen(
+                                  user: widget.user,
+                                  token: widget.token,
+                                ),
+                          ),
+                        );
                       },
                     ),
                   ],
@@ -204,7 +226,10 @@ class _KassirPageState extends State<KassirPage> {
   }
 
   // Button style and widget
-  Widget _buildButton({required String label, required VoidCallback onPressed}) {
+  Widget _buildButton({
+    required String label,
+    required VoidCallback onPressed,
+  }) {
     return Padding(
       padding: const EdgeInsets.all(10.0),
       child: ElevatedButton(
@@ -237,7 +262,6 @@ class _KassirPageState extends State<KassirPage> {
     elevation: WidgetStateProperty.all(0),
   );
 }
-
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});

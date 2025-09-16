@@ -19,7 +19,7 @@ class Subcategory {
 class Ovqat {
   final String id;
   final String name;
-  final num price;
+  final double price;
   final String categoryId;
   final String categoryName;
   final String? subcategory; // 🔹 Mahsulot subkategoriya nomi

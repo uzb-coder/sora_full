@@ -191,6 +191,8 @@ class AuthServices {
         body: jsonEncode({'user_code': userCode, 'password': password}),
       );
 
+      print("📡 Login javob kodi: ${response.statusCode}");
+      print("📄 Login javob: ${response.body}");
 
       if (response.statusCode == 200) {
         final AuthResponse authResponse = AuthResponse.fromJson(

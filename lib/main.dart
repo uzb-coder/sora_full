@@ -1,25 +1,34 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:intl/date_symbol_data_local.dart';
-import 'dart:io' show Platform;
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:sqflite/sqflite.dart';
-
+import 'package:intl/date_symbol_data_local.dart'; // <-- MUHIM O'ZGARISH
+import 'package:sora/Global/my_pkg.dart';
 import 'Global/Global_token.dart';
 import 'Kirish.dart';
+import 'package:window_manager/window_manager.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized(); // MUHIM
-
-  if (!Platform.isAndroid && !Platform.isIOS) {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  }
-
   Get.put(TokenController());
+  WidgetsFlutterBinding.ensureInitialized(); // <-- MUHIM O'ZGARISH
+  if (Platform.isWindows) {
+    // Window manager sozlash
+    await windowManager.ensureInitialized();
 
-  await initializeDateFormatting('uz', null);
-
+    // Full screen qilish
+    WindowOptions windowOptions = const WindowOptions(fullScreen: true);
+    windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.setFullScreen(true); // Doimiy fullscreen
+      await windowManager.show();
+      await windowManager.focus();
+    });
+  }
+  if (Platform.isAndroid) {
+    // ✅ Faqat Android qurilmalarda doimiy LANDSCAPE yo‘nalish
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeRight,
+      DeviceOrientation.landscapeLeft,
+    ]);
+  }
+  await initializeDateFormatting('uz', null); // <-- MUHIM O'ZGARISH
   runApp(const MyApp());
 }
 
@@ -50,7 +59,7 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      home: WelcomeScreen(), // Sizning login/entry sahifangiz
+      home: WelcomeScreen(),
     );
   }
 }
