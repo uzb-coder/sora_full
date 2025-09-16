@@ -1222,8 +1222,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                       )
                       : GridView.builder(
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: isDesktop ? 5 : (isTablet ? 4 : 3),
-                          childAspectRatio: 1.5,
+                          crossAxisCount: isDesktop ? 5 : (isTablet ? 2 : 3),
+                          childAspectRatio: 1.1,
                           crossAxisSpacing: 8,
                           mainAxisSpacing: 8,
                         ),

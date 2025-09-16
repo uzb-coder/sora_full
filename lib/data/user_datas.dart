@@ -3,7 +3,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 class UserDatas {
   final Future<SharedPreferences> _loginda = SharedPreferences.getInstance();
   String _token = "";
+  String _api = "";
   String get token => _token;
+  String get api => _api;
 
   // Future<void> saveLoginUser(UserAuthModel model) async {
   //   savedUser(true);
@@ -16,6 +18,11 @@ class UserDatas {
   void saveToken(String token) async {
     SharedPreferences value = await _loginda;
     value.setString("token", token);
+  }
+
+  void saveApi(String api) async {
+    SharedPreferences value = await _loginda;
+    value.setString("api", api);
   }
 
   void deleteUserDatas() async {
@@ -32,6 +39,20 @@ class UserDatas {
       return data;
     } else {
       _token = '';
+
+      return "";
+    }
+  }
+
+  Future<String> getApi() async {
+    SharedPreferences value = await _loginda;
+    if (value.containsKey('api')) {
+      String data = value.getString("api")!;
+      _api = data;
+
+      return api;
+    } else {
+      _api = '';
 
       return "";
     }

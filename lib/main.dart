@@ -21,13 +21,13 @@ void main() async {
       await windowManager.focus();
     });
   }
-  if (Platform.isAndroid) {
-    // ✅ Faqat Android qurilmalarda doimiy LANDSCAPE yo‘nalish
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeRight,
-      DeviceOrientation.landscapeLeft,
-    ]);
-  }
+  // if (Platform.isAndroid) {
+  //   // ✅ Faqat Android qurilmalarda doimiy LANDSCAPE yo‘nalish
+  //   await SystemChrome.setPreferredOrientations([
+  //     DeviceOrientation.landscapeRight,
+  //     DeviceOrientation.landscapeLeft,
+  //   ]);
+  // }
   await initializeDateFormatting('uz', null); // <-- MUHIM O'ZGARISH
   runApp(const MyApp());
 }
