@@ -1,8 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-
-import '../../Global/Api_global.dart';
+import 'package:sora/data/user_datas.dart';
 
 class User {
   final String id;
@@ -40,25 +39,23 @@ class User {
 }
 
 class UserController {
+  static Future<List<User>> getAllUsers() async {
+    final api = await UserDatas().getApi();
 
-  static const String baseUrl = "${ApiConfig.baseUrl}";
+    final response = await http.get(
+      Uri.parse('$api/users'),
+      headers: {'Content-Type': 'application/json'},
+    );
 
- static Future<List<User>> getAllUsers() async {
-
-   final response = await http.get(
-     Uri.parse('$baseUrl/users'),
-     headers: {
-       'Content-Type': 'application/json',
-     },
-   );
-
-   if (response.statusCode == 200) {
-     print(response.body);
-     print(response.body);
-     final List<dynamic> jsonList = json.decode(response.body);
-     return jsonList.map((json) => User.fromJson(json)).toList();
-   } else {
-     throw Exception('Foydalanuvchilarni yuklashda xatolik: ${response.statusCode}');
-   }
- }
+    if (response.statusCode == 200) {
+      print(response.body);
+      print(response.body);
+      final List<dynamic> jsonList = json.decode(response.body);
+      return jsonList.map((json) => User.fromJson(json)).toList();
+    } else {
+      throw Exception(
+        'Foydalanuvchilarni yuklashda xatolik: ${response.statusCode}',
+      );
+    }
+  }
 }

@@ -5,10 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:data_table_2/data_table_2.dart';
+import 'package:sora/data/user_datas.dart';
 import 'package:web_socket_channel/status.dart' as status;
 import 'package:web_socket_channel/web_socket_channel.dart';
-
-import '../../../Global/Api_global.dart';
 
 class Printer {
   final String id;
@@ -178,7 +177,9 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
 
   // 🌐 Serverdan printerni olish
   Future<void> fetchPrinters() async {
-    final url = Uri.parse('${ApiConfig.baseUrl}/printers');
+    final api = await UserDatas().getApi();
+
+    final url = Uri.parse('$api/printers');
     final response = await http.get(
       url,
       headers: {'Authorization': 'Bearer ${widget.token}'},
@@ -211,8 +212,9 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
       setState(() => isCrudLoading = false);
       return;
     }
+    final api = await UserDatas().getApi();
 
-    final url = Uri.parse('${ApiConfig.baseUrl}/printers');
+    final url = Uri.parse('$api/printers');
     final response = await http.post(
       url,
       headers: {
@@ -253,8 +255,9 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
       setState(() => isCrudLoading = false);
       return;
     }
+    final api = await UserDatas().getApi();
 
-    final url = Uri.parse('${ApiConfig.baseUrl}/printers/$id');
+    final url = Uri.parse('$api/printers/$id');
     final response = await http.put(
       url,
       headers: {
@@ -287,8 +290,9 @@ class _PrinterTablePageState extends State<PrinterTablePage> {
   // ❌ Printer o‘chirish
   Future<void> deletePrinter(String id) async {
     setState(() => isCrudLoading = true);
+    final api = await UserDatas().getApi();
 
-    final url = Uri.parse('${ApiConfig.baseUrl}/printers/$id');
+    final url = Uri.parse('$api/printers/$id');
     final response = await http.delete(
       url,
       headers: {'Authorization': 'Bearer ${widget.token}'},

@@ -7,7 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
-import 'package:sora/Global/Api_global.dart';
+import 'package:sora/data/user_datas.dart';
+
 import 'package:win32/win32.dart';
 
 class OrderResponse {
@@ -30,9 +31,10 @@ class OrderResponse {
   factory OrderResponse.fromJson(Map<String, dynamic> json) {
     return OrderResponse(
       success: json['success'] ?? false,
-      orders: (json['orders'] as List<dynamic>?)
-          ?.map((e) => Order.fromJson(e as Map<String, dynamic>))
-          .toList() ??
+      orders:
+          (json['orders'] as List<dynamic>?)
+              ?.map((e) => Order.fromJson(e as Map<String, dynamic>))
+              .toList() ??
           [],
       totalCount: json['total_count'] ?? 0,
       totalAmount: json['total_amount'] ?? 0,
@@ -101,9 +103,10 @@ class Order {
       paymentMethod: json['paymentMethod'] ?? '',
       paidBy: json['paidBy'] ?? '',
       completedBy: json['completedBy'] ?? '',
-      items: (json['items'] as List<dynamic>?)
-          ?.map((e) => OrderItem.fromJson(e as Map<String, dynamic>))
-          .toList() ??
+      items:
+          (json['items'] as List<dynamic>?)
+              ?.map((e) => OrderItem.fromJson(e as Map<String, dynamic>))
+              .toList() ??
           [],
       orderDate: json['order_date'] ?? '',
     );
@@ -156,9 +159,10 @@ class PaymentStats {
 
   factory PaymentStats.fromJson(Map<String, dynamic> json) {
     return PaymentStats(
-      byMethod: (json['by_method'] as Map<String, dynamic>?)?.map(
+      byMethod:
+          (json['by_method'] as Map<String, dynamic>?)?.map(
             (key, value) => MapEntry(key, value as int),
-      ) ??
+          ) ??
           {},
       totalCash: json['total_cash'] ?? 0,
       totalCard: json['total_card'] ?? 0,
@@ -212,8 +216,10 @@ class UsbPrinterService {
         print("🖨️ ${count} ta printer topildi");
 
         for (var i = 0; i < count; i++) {
-          final printerName = printerInfo.elementAt(i).ref.pPrinterName.toDartString();
-          final portName = printerInfo.elementAt(i).ref.pPortName.toDartString();
+          final printerName =
+              printerInfo.elementAt(i).ref.pPrinterName.toDartString();
+          final portName =
+              printerInfo.elementAt(i).ref.pPortName.toDartString();
 
           print("🖨️ Printer: $printerName, Port: $portName");
 
@@ -289,7 +295,10 @@ class UsbPrinterService {
     }
   }
 
-  Future<ApiResponse<bool>> _printToSpecificPrinter(Order order, String printerName) async {
+  Future<ApiResponse<bool>> _printToSpecificPrinter(
+    Order order,
+    String printerName,
+  ) async {
     final hPrinter = calloc<HANDLE>();
     final docInfo = calloc<DOC_INFO_1>();
 
@@ -332,7 +341,12 @@ class UsbPrinterService {
       bytesList.setAll(0, escPosData);
 
       final bytesWritten = calloc<DWORD>();
-      final success = WritePrinter(hPrinter.value, bytesPointer, escPosData.length, bytesWritten);
+      final success = WritePrinter(
+        hPrinter.value,
+        bytesPointer,
+        escPosData.length,
+        bytesWritten,
+      );
 
       print("📝 Yozildi: ${bytesWritten.value} / ${escPosData.length} bayt");
 
@@ -348,10 +362,17 @@ class UsbPrinterService {
       if (success == 0) {
         final error = GetLastError();
         print('❌ WritePrinter xatolik: $error');
-        return ApiResponse(success: false, message: 'Ma\'lumot yuborishda xatolik');
+        return ApiResponse(
+          success: false,
+          message: 'Ma\'lumot yuborishda xatolik',
+        );
       } else {
         print('✅ Chek muvaffaqiyatli chop etildi: $printerName');
-        return ApiResponse(success: true, data: true, message: 'Chek muvaffaqiyatli chop etildi');
+        return ApiResponse(
+          success: true,
+          data: true,
+          message: 'Chek muvaffaqiyatli chop etildi',
+        );
       }
     } catch (e) {
       print('❌ Chop etishda xatolik: $e');
@@ -478,11 +499,15 @@ class UsbPrinterService {
 
     for (var item in items) {
       final namePart = '$itemNum. ${item.name}';
-      final qtyTotal = '${item.quantity}x  ${formatNumber(item.price * item.quantity)}';
+      final qtyTotal =
+          '${item.quantity}x  ${formatNumber(item.price * item.quantity)}';
 
       const int lineLength = 32;
       String line = namePart;
-      int spaceCount = lineLength - utf8.encode(namePart).length - utf8.encode(qtyTotal).length;
+      int spaceCount =
+          lineLength -
+          utf8.encode(namePart).length -
+          utf8.encode(qtyTotal).length;
       if (spaceCount < 1) spaceCount = 1;
 
       line += ' ' * spaceCount + qtyTotal;
@@ -519,7 +544,7 @@ class UsbPrinterService {
     final numStr = number.toString().split('.');
     return numStr[0].replaceAllMapped(
       RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-          (Match m) => '${m[1]} ',
+      (Match m) => '${m[1]} ',
     );
   }
 }
@@ -552,7 +577,8 @@ class _OrderTablePageState extends State<OrderTablePage1> {
   void _checkAndLoadDailyData() {
     setState(() {
       filteredOrders = [];
-      responseText = "${DateFormat('dd.MM.yyyy').format(selectedDate ?? DateTime.now())} uchun ma'lumotlar yuklanmoqda...";
+      responseText =
+          "${DateFormat('dd.MM.yyyy').format(selectedDate ?? DateTime.now())} uchun ma'lumotlar yuklanmoqda...";
     });
     fetchZakaz();
   }
@@ -581,7 +607,8 @@ class _OrderTablePageState extends State<OrderTablePage1> {
     if (picked != null && picked != selectedDate) {
       setState(() {
         selectedDate = picked;
-        responseText = "${DateFormat('dd.MM.yyyy').format(picked)} uchun ma'lumotlar yuklanmoqda...";
+        responseText =
+            "${DateFormat('dd.MM.yyyy').format(picked)} uchun ma'lumotlar yuklanmoqda...";
       });
       fetchZakaz(forceRefresh: true);
     }
@@ -589,8 +616,10 @@ class _OrderTablePageState extends State<OrderTablePage1> {
 
   Future<void> fetchZakaz({bool forceRefresh = false}) async {
     setState(() => isLoading = true);
+    final api = await UserDatas().getApi();
+
     try {
-      var url = Uri.parse("${ApiConfig.baseUrl}/orders/completed");
+      var url = Uri.parse("$api/orders/completed");
 
       var res = await http.get(
         url,
@@ -605,9 +634,10 @@ class _OrderTablePageState extends State<OrderTablePage1> {
         setState(() {
           orderResponse = OrderResponse.fromJson(data);
           _filterOrdersByDate();
-          responseText = filteredOrders.isEmpty
-              ? "${DateFormat('dd.MM.yyyy').format(selectedDate ?? DateTime.now())} da sizning buyurtmalaringiz yo'q"
-              : "Ma'lumotlar muvaffaqiyatli yuklandi";
+          responseText =
+              filteredOrders.isEmpty
+                  ? "${DateFormat('dd.MM.yyyy').format(selectedDate ?? DateTime.now())} da sizning buyurtmalaringiz yo'q"
+                  : "Ma'lumotlar muvaffaqiyatli yuklandi";
         });
       } else {
         setState(() {
@@ -626,19 +656,22 @@ class _OrderTablePageState extends State<OrderTablePage1> {
   void _filterOrdersByDate() {
     if (orderResponse == null) return;
 
-    filteredOrders = orderResponse!.orders.where((order) {
-      bool waiterMatch = order.waiterName.toLowerCase() == widget.waiterName.toLowerCase();
-      bool dateMatch = false;
+    filteredOrders =
+        orderResponse!.orders.where((order) {
+          bool waiterMatch =
+              order.waiterName.toLowerCase() == widget.waiterName.toLowerCase();
+          bool dateMatch = false;
 
-      DateTime? paidDate = DateTime.tryParse(order.paidAt);
-      if (paidDate != null && selectedDate != null) {
-        dateMatch = paidDate.year == selectedDate!.year &&
-            paidDate.month == selectedDate!.month &&
-            paidDate.day == selectedDate!.day;
-      }
+          DateTime? paidDate = DateTime.tryParse(order.paidAt);
+          if (paidDate != null && selectedDate != null) {
+            dateMatch =
+                paidDate.year == selectedDate!.year &&
+                paidDate.month == selectedDate!.month &&
+                paidDate.day == selectedDate!.day;
+          }
 
-      return waiterMatch && dateMatch;
-    }).toList();
+          return waiterMatch && dateMatch;
+        }).toList();
   }
 
   Future<void> _printOrder(Order order, int index) async {
@@ -674,8 +707,13 @@ class _OrderTablePageState extends State<OrderTablePage1> {
 
   @override
   Widget build(BuildContext context) {
-    int totalService = filteredOrders.fold(0, (sum, order) => sum + order.serviceAmount);
-    final displayDate = DateFormat('dd.MM.yyyy').format(selectedDate ?? DateTime.now());
+    int totalService = filteredOrders.fold(
+      0,
+      (sum, order) => sum + order.serviceAmount,
+    );
+    final displayDate = DateFormat(
+      'dd.MM.yyyy',
+    ).format(selectedDate ?? DateTime.now());
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -709,7 +747,11 @@ class _OrderTablePageState extends State<OrderTablePage1> {
             margin: EdgeInsets.symmetric(horizontal: 8),
             child: IconButton(
               onPressed: () => _selectDate(context),
-              icon: Icon(Icons.calendar_today_rounded, color: Colors.white, size: 24),
+              icon: Icon(
+                Icons.calendar_today_rounded,
+                color: Colors.white,
+                size: 24,
+              ),
               tooltip: 'Sana tanlash',
               splashRadius: 24,
             ),
@@ -750,11 +792,7 @@ class _OrderTablePageState extends State<OrderTablePage1> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.today_rounded,
-                  size: 20,
-                  color: Colors.white,
-                ),
+                Icon(Icons.today_rounded, size: 20, color: Colors.white),
                 SizedBox(width: 8),
                 Text(
                   "Sana: $displayDate",
@@ -782,49 +820,48 @@ class _OrderTablePageState extends State<OrderTablePage1> {
                   ),
                 ],
               ),
-              child: isLoading
-                  ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(
-                      color: Color(0xFF0d5720),
-                    ),
-                    SizedBox(height: 16),
-                    Text(
-                      responseText,
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              )
-                  : filteredOrders.isEmpty
-                  ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.receipt_long_outlined,
-                      size: 64,
-                      color: Colors.grey[400],
-                    ),
-                    SizedBox(height: 16),
-                    Text(
-                      responseText,
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              )
-                  : _buildDataTable(),
+              child:
+                  isLoading
+                      ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(color: Color(0xFF0d5720)),
+                            SizedBox(height: 16),
+                            Text(
+                              responseText,
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                      : filteredOrders.isEmpty
+                      ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.receipt_long_outlined,
+                              size: 64,
+                              color: Colors.grey[400],
+                            ),
+                            SizedBox(height: 16),
+                            Text(
+                              responseText,
+                              style: TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      )
+                      : _buildDataTable(),
             ),
           ),
           SizedBox(height: 16),
@@ -849,7 +886,7 @@ class _OrderTablePageState extends State<OrderTablePage1> {
               headingRowHeight: 50,
               dataRowHeight: 55,
               headingRowColor: MaterialStateColor.resolveWith(
-                    (states) => Color(0xFF0d5720).withOpacity(0.1),
+                (states) => Color(0xFF0d5720).withOpacity(0.1),
               ),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
@@ -960,180 +997,191 @@ class _OrderTablePageState extends State<OrderTablePage1> {
                 //   ),
                 // ),
               ],
-              rows: filteredOrders.asMap().entries.map((entry) {
-                final index = entry.key;
-                final order = entry.value;
-                final isEven = index % 2 == 0;
+              rows:
+                  filteredOrders.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final order = entry.value;
+                    final isEven = index % 2 == 0;
 
-                return DataRow(
-                  color: MaterialStateColor.resolveWith(
-                        (states) => isEven ? Colors.grey.withOpacity(0.05) : Colors.white,
-                  ),
-                  cells: [
-                    DataCell(
-                      Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          order.orderNumber,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF0d5720),
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
+                    return DataRow(
+                      color: MaterialStateColor.resolveWith(
+                        (states) =>
+                            isEven
+                                ? Colors.grey.withOpacity(0.05)
+                                : Colors.white,
                       ),
-                    ),
-                    DataCell(
-                      Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Container(
-                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Color(0xFF0d5720).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            order.tableNumber,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF0d5720),
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          "${order.itemsCount}",
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          "${_formatNumber(order.subtotal)}",
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          "${_formatNumber(order.serviceAmount)}",
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.orange[700],
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          "${_formatNumber(order.finalTotal)}",
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF0d5720),
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              order.completedAt.isNotEmpty
-                                  ? DateFormat('HH:mm').format(DateTime.parse(order.completedAt))
-                                  : "-",
+                      cells: [
+                        DataCell(
+                          Container(
+                            width: double.infinity,
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              order.orderNumber,
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.grey[800],
+                                color: Color(0xFF0d5720),
                               ),
+                              textAlign: TextAlign.center,
                             ),
-                            SizedBox(height: 2),
-                            Text(
-                              order.completedAt.isNotEmpty
-                                  ? DateFormat('dd.MM').format(DateTime.parse(order.completedAt))
-                                  : "-",
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
-                    // DataCell(
-                    //   Container(
-                    //     width: double.infinity,
-                    //     padding: EdgeInsets.symmetric(vertical: 8),
-                    //     child: Center(
-                    //       child: Container(
-                    //         width: 70,
-                    //         height: 32,
-                    //         child: ElevatedButton(
-                    //           onPressed: order.receiptPrinted ? null : () => _printOrder(order, index),
-                    //           style: ElevatedButton.styleFrom(
-                    //             backgroundColor: order.receiptPrinted
-                    //                 ? Colors.grey[300]
-                    //                 : Color(0xFF0d5720),
-                    //             foregroundColor: order.receiptPrinted
-                    //                 ? Colors.grey[600]
-                    //                 : Colors.white,
-                    //             padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    //             shape: RoundedRectangleBorder(
-                    //               borderRadius: BorderRadius.circular(8),
-                    //             ),
-                    //             elevation: order.receiptPrinted ? 0 : 2,
-                    //           ),
-                    //           child: Text(
-                    //             order.receiptPrinted ? '✓' : 'Chop',
-                    //             style: TextStyle(
-                    //               fontSize: 11,
-                    //               fontWeight: FontWeight.w600,
-                    //             ),
-                    //           ),
-                    //         ),
-                    //       ),
-                    //     ),
-                    //   ),
-                    // ),
-                  ],
-                );
-              }).toList(),
+                        DataCell(
+                          Container(
+                            width: double.infinity,
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Color(0xFF0d5720).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                order.tableNumber,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF0d5720),
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Container(
+                            width: double.infinity,
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              "${order.itemsCount}",
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Container(
+                            width: double.infinity,
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              "${_formatNumber(order.subtotal)}",
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Container(
+                            width: double.infinity,
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              "${_formatNumber(order.serviceAmount)}",
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.orange[700],
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Container(
+                            width: double.infinity,
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              "${_formatNumber(order.finalTotal)}",
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF0d5720),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                        DataCell(
+                          Container(
+                            width: double.infinity,
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  order.completedAt.isNotEmpty
+                                      ? DateFormat('HH:mm').format(
+                                        DateTime.parse(order.completedAt),
+                                      )
+                                      : "-",
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey[800],
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  order.completedAt.isNotEmpty
+                                      ? DateFormat('dd.MM').format(
+                                        DateTime.parse(order.completedAt),
+                                      )
+                                      : "-",
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        // DataCell(
+                        //   Container(
+                        //     width: double.infinity,
+                        //     padding: EdgeInsets.symmetric(vertical: 8),
+                        //     child: Center(
+                        //       child: Container(
+                        //         width: 70,
+                        //         height: 32,
+                        //         child: ElevatedButton(
+                        //           onPressed: order.receiptPrinted ? null : () => _printOrder(order, index),
+                        //           style: ElevatedButton.styleFrom(
+                        //             backgroundColor: order.receiptPrinted
+                        //                 ? Colors.grey[300]
+                        //                 : Color(0xFF0d5720),
+                        //             foregroundColor: order.receiptPrinted
+                        //                 ? Colors.grey[600]
+                        //                 : Colors.white,
+                        //             padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        //             shape: RoundedRectangleBorder(
+                        //               borderRadius: BorderRadius.circular(8),
+                        //             ),
+                        //             elevation: order.receiptPrinted ? 0 : 2,
+                        //           ),
+                        //           child: Text(
+                        //             order.receiptPrinted ? '✓' : 'Chop',
+                        //             style: TextStyle(
+                        //               fontSize: 11,
+                        //               fontWeight: FontWeight.w600,
+                        //             ),
+                        //           ),
+                        //         ),
+                        //       ),
+                        //     ),
+                        //   ),
+                        // ),
+                      ],
+                    );
+                  }).toList(),
             ),
           ),
         ),
@@ -1145,7 +1193,7 @@ class _OrderTablePageState extends State<OrderTablePage1> {
     final numStr = number.toString().split('.');
     return numStr[0].replaceAllMapped(
       RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-          (Match m) => '${m[1]} ',
+      (Match m) => '${m[1]} ',
     );
   }
 }

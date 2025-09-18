@@ -3,9 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
-
-import '../../../Global/Api_global.dart';
-
+import 'package:sora/data/user_datas.dart';
 
 class Food {
   final String id;
@@ -42,13 +40,13 @@ class Food {
       soni: _parseToInt(json['soni']),
       subcategory: json['subcategory']?.toString() ?? '',
       categoryId:
-      json['category'] is Map
-          ? json['category']['_id']?.toString() ?? ''
-          : json['category']?.toString() ?? '',
+          json['category'] is Map
+              ? json['category']['_id']?.toString() ?? ''
+              : json['category']?.toString() ?? '',
       departmentId:
-      json['department_id'] is Map
-          ? json['department_id']['_id']?.toString() ?? ''
-          : json['department_id']?.toString() ?? '',
+          json['department_id'] is Map
+              ? json['department_id']['_id']?.toString() ?? ''
+              : json['department_id']?.toString() ?? '',
       expiration: json['expiration']?.toString(),
     );
   }
@@ -81,14 +79,14 @@ class Category {
       id: json['_id']?.toString() ?? '',
       title: json['title']?.toString() ?? '',
       subcategories:
-      (json['subcategories'] as List<dynamic>?)
-          ?.map(
-            (s) =>
-        s is Map
-            ? s['title']?.toString() ?? ''
-            : s?.toString() ?? '',
-      )
-          .toList() ??
+          (json['subcategories'] as List<dynamic>?)
+              ?.map(
+                (s) =>
+                    s is Map
+                        ? s['title']?.toString() ?? ''
+                        : s?.toString() ?? '',
+              )
+              .toList() ??
           [],
     );
   }
@@ -123,7 +121,6 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
   late Future<List<Category>> _futureCategories;
   late Future<List<Department>> _futureDepartments;
 
-
   @override
   void initState() {
     super.initState();
@@ -136,7 +133,6 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
     _futureDepartments = fetchDepartments(widget.token);
   }
 
-
   // 🔎 qidiruv
   String _searchQuery = "";
   final TextEditingController _searchController = TextEditingController();
@@ -146,7 +142,6 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
   double _savedScrollOffset = 0.0;
 
   @override
-
   void _refresh() {
     setState(() {
       _savedScrollOffset = _scrollController.offset;
@@ -170,11 +165,11 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
 
     String? selectedUnit = food?.unit;
     String? selectedSubcategory =
-    food?.subcategory.isNotEmpty == true ? food?.subcategory : null;
+        food?.subcategory.isNotEmpty == true ? food?.subcategory : null;
     Category? selectedCategory =
-    food != null ? await _getCategoryById(food.categoryId) : null;
+        food != null ? await _getCategoryById(food.categoryId) : null;
     Department? selectedDepartment =
-    food != null ? await _getDepartmentById(food.departmentId) : null;
+        food != null ? await _getDepartmentById(food.departmentId) : null;
 
     const units = ['dona', 'kg', 'litr', 'sm', 'gramm', 'metr', 'bek'];
     final isEditing = food != null;
@@ -215,7 +210,8 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
 
                 final categories = snapshot.data![0] as List<Category>;
                 final departments = snapshot.data![1] as List<Department>;
-                List<String> subcategories = selectedCategory?.subcategories ?? [];
+                List<String> subcategories =
+                    selectedCategory?.subcategories ?? [];
 
                 return Dialog(
                   // AlertDialog o'rniga Dialog ishlatamiz - ko'proq nazorat beradi
@@ -302,12 +298,15 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                                           keyboardType: TextInputType.number,
                                           textInputAction: TextInputAction.next,
                                           inputFormatters: [
-                                            FilteringTextInputFormatter.digitsOnly,
+                                            FilteringTextInputFormatter
+                                                .digitsOnly,
                                           ],
                                           decoration: const InputDecoration(
                                             labelText: 'Narxi *',
                                             border: OutlineInputBorder(),
-                                            prefixIcon: Icon(Icons.attach_money),
+                                            prefixIcon: Icon(
+                                              Icons.attach_money,
+                                            ),
                                             suffixText: "so'm",
                                           ),
                                         ),
@@ -320,16 +319,19 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                                             border: OutlineInputBorder(),
                                           ),
                                           value: selectedUnit,
-                                          items: units
-                                              .map(
-                                                (u) => DropdownMenuItem(
-                                              value: u,
-                                              child: Text(u),
-                                            ),
-                                          )
-                                              .toList(),
-                                          onChanged: (v) =>
-                                              setDialogState(() => selectedUnit = v),
+                                          items:
+                                              units
+                                                  .map(
+                                                    (u) => DropdownMenuItem(
+                                                      value: u,
+                                                      child: Text(u),
+                                                    ),
+                                                  )
+                                                  .toList(),
+                                          onChanged:
+                                              (v) => setDialogState(
+                                                () => selectedUnit = v,
+                                              ),
                                         ),
                                       ),
                                     ],
@@ -356,7 +358,8 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                                     controller: dateController,
                                     readOnly: true,
                                     decoration: const InputDecoration(
-                                      labelText: 'Yaroqlilik muddati (ixtiyoriy)',
+                                      labelText:
+                                          'Yaroqlilik muddati (ixtiyoriy)',
                                       border: OutlineInputBorder(),
                                       suffixIcon: Icon(Icons.date_range),
                                     ),
@@ -383,19 +386,22 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                                       border: OutlineInputBorder(),
                                     ),
                                     value: selectedCategory,
-                                    items: categories
-                                        .map(
-                                          (c) => DropdownMenuItem(
-                                        value: c,
-                                        child: Text(c.title),
-                                      ),
-                                    )
-                                        .toList(),
-                                    onChanged: (val) => setDialogState(() {
-                                      selectedCategory = val;
-                                      selectedSubcategory = null;
-                                      subcategories = val?.subcategories ?? [];
-                                    }),
+                                    items:
+                                        categories
+                                            .map(
+                                              (c) => DropdownMenuItem(
+                                                value: c,
+                                                child: Text(c.title),
+                                              ),
+                                            )
+                                            .toList(),
+                                    onChanged:
+                                        (val) => setDialogState(() {
+                                          selectedCategory = val;
+                                          selectedSubcategory = null;
+                                          subcategories =
+                                              val?.subcategories ?? [];
+                                        }),
                                   ),
 
                                   // Subkategoriya (conditional)
@@ -411,19 +417,24 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                                         // Bo'sh variant qo'shamiz
                                         const DropdownMenuItem(
                                           value: null,
-                                          child: Text('Tanlanmagan',
-                                              style: TextStyle(color: Colors.grey)),
+                                          child: Text(
+                                            'Tanlanmagan',
+                                            style: TextStyle(
+                                              color: Colors.grey,
+                                            ),
+                                          ),
                                         ),
                                         ...subcategories.map(
-                                              (sub) => DropdownMenuItem(
+                                          (sub) => DropdownMenuItem(
                                             value: sub,
                                             child: Text(sub),
                                           ),
                                         ),
                                       ],
-                                      onChanged: (val) => setDialogState(
+                                      onChanged:
+                                          (val) => setDialogState(
                                             () => selectedSubcategory = val,
-                                      ),
+                                          ),
                                     ),
                                   ],
                                   const SizedBox(height: 12),
@@ -435,19 +446,21 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                                       border: OutlineInputBorder(),
                                     ),
                                     value: selectedDepartment,
-                                    items: departments
-                                        .map(
-                                          (d) => DropdownMenuItem(
-                                        value: d,
-                                        child: Text(
-                                          '${d.title} (${d.warehouse})',
-                                        ),
-                                      ),
-                                    )
-                                        .toList(),
-                                    onChanged: (val) => setDialogState(
+                                    items:
+                                        departments
+                                            .map(
+                                              (d) => DropdownMenuItem(
+                                                value: d,
+                                                child: Text(
+                                                  '${d.title} (${d.warehouse})',
+                                                ),
+                                              ),
+                                            )
+                                            .toList(),
+                                    onChanged:
+                                        (val) => setDialogState(
                                           () => selectedDepartment = val,
-                                    ),
+                                        ),
                                   ),
                                 ],
                               ),
@@ -512,9 +525,13 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                                       'Birlikni tanlang!',
                                     );
                                   }
-                                  final quantityText = quantityController.text.trim();
+                                  final quantityText =
+                                      quantityController.text.trim();
                                   if (quantityText.isEmpty) {
-                                    return _showErrorSnackBar(context, 'Sonni kiriting!');
+                                    return _showErrorSnackBar(
+                                      context,
+                                      'Sonni kiriting!',
+                                    );
                                   }
                                   final quantity = int.tryParse(quantityText);
                                   if (quantity == null || quantity < 0) {
@@ -541,22 +558,23 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                                     showDialog(
                                       context: context,
                                       barrierDismissible: false,
-                                      builder: (context) => AlertDialog(
-                                        content: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const CircularProgressIndicator(),
-                                            const SizedBox(width: 20),
-                                            Flexible(
-                                              child: Text(
-                                                isEditing
-                                                    ? 'Mahsulot yangilanmoqda...'
-                                                    : 'Mahsulot qo\'shilmoqda...',
-                                              ),
+                                      builder:
+                                          (context) => AlertDialog(
+                                            content: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const CircularProgressIndicator(),
+                                                const SizedBox(width: 20),
+                                                Flexible(
+                                                  child: Text(
+                                                    isEditing
+                                                        ? 'Mahsulot yangilanmoqda...'
+                                                        : 'Mahsulot qo\'shilmoqda...',
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                          ],
-                                        ),
-                                      ),
+                                          ),
                                     );
 
                                     if (isEditing) {
@@ -593,8 +611,12 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                                     }
 
                                     if (!mounted) return;
-                                    Navigator.pop(context); // Loading dialog yopish
-                                    Navigator.pop(context); // Main dialog yopish
+                                    Navigator.pop(
+                                      context,
+                                    ); // Loading dialog yopish
+                                    Navigator.pop(
+                                      context,
+                                    ); // Main dialog yopish
                                     setState(_loadData);
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
@@ -608,7 +630,9 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                                     );
                                   } catch (e) {
                                     if (!mounted) return;
-                                    Navigator.pop(context); // Loading dialog yopish
+                                    Navigator.pop(
+                                      context,
+                                    ); // Loading dialog yopish
                                     _showErrorSnackBar(context, 'Xatolik: $e');
                                   }
                                 },
@@ -638,6 +662,7 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
       },
     );
   }
+
   Future<Category?> _getCategoryById(String id) async {
     try {
       final categories = await _futureCategories;
@@ -721,37 +746,42 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(6),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
               ),
             ),
 
             const Spacer(), // 🔑 chap va o‘ngni ajratadi
-
             // O‘ng tomonda: Search + Yangilash yonma-yon
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 // 🔎 Search
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 250,),
+                  constraints: const BoxConstraints(maxWidth: 250),
                   child: TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
                       hintText: "Qidirish...",
                       prefixIcon: const Icon(Icons.search),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = "");
-                        },
-                      )
-                          : null,
+                      suffixIcon:
+                          _searchQuery.isNotEmpty
+                              ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _searchQuery = "");
+                                },
+                              )
+                              : null,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                      ),
                     ),
                     onChanged: (val) {
                       setState(() => _searchQuery = val.toLowerCase());
@@ -769,7 +799,6 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
               ],
             ),
           ],
-
         ),
       ),
       body: Container(
@@ -781,9 +810,7 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
               return const Center(child: CircularProgressIndicator());
             }
             if (snapshot.hasError) {
-              return Center(
-                child: Text("Xatolik: ${snapshot.error}"),
-              );
+              return Center(child: Text("Xatolik: ${snapshot.error}"));
             }
 
             final foods = snapshot.data![0] as List<Food>? ?? [];
@@ -791,17 +818,20 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
             final categoryMap = {for (var c in categories) c.id: c.title};
 
             // 🔎 filter
-            final filteredFoods = foods.where((f) {
-              final q = _searchQuery;
-              if (q.isEmpty) return true;
-              return f.name.toLowerCase().contains(q) ||
-                  f.price.toString().contains(q) ||
-                  f.unit.toLowerCase().contains(q) ||
-                  f.soni.toString().contains(q) ||
-                  (f.expiration ?? "").toLowerCase().contains(q) ||
-                  (categoryMap[f.categoryId] ?? "").toLowerCase().contains(q) ||
-                  f.subcategory.toLowerCase().contains(q);
-            }).toList();
+            final filteredFoods =
+                foods.where((f) {
+                  final q = _searchQuery;
+                  if (q.isEmpty) return true;
+                  return f.name.toLowerCase().contains(q) ||
+                      f.price.toString().contains(q) ||
+                      f.unit.toLowerCase().contains(q) ||
+                      f.soni.toString().contains(q) ||
+                      (f.expiration ?? "").toLowerCase().contains(q) ||
+                      (categoryMap[f.categoryId] ?? "").toLowerCase().contains(
+                        q,
+                      ) ||
+                      f.subcategory.toLowerCase().contains(q);
+                }).toList();
 
             // 📜 scroll pozitsiyani qaytarish
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -836,9 +866,18 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                         Expanded(flex: 1, child: _buildHeaderCell("Narxi")),
                         Expanded(flex: 1, child: _buildHeaderCell("Birligi")),
                         Expanded(flex: 1, child: _buildHeaderCell("Soni")),
-                        Expanded(flex: 1, child: _buildHeaderCell("Yaroqlilik")),
-                        Expanded(flex: 2, child: _buildHeaderCell("Kategoriya")),
-                        Expanded(flex: 2, child: _buildHeaderCell("Subkategoriya")),
+                        Expanded(
+                          flex: 1,
+                          child: _buildHeaderCell("Yaroqlilik"),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: _buildHeaderCell("Kategoriya"),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: _buildHeaderCell("Subkategoriya"),
+                        ),
                         Expanded(flex: 1, child: _buildHeaderCell("Amallar")),
                       ],
                     ),
@@ -858,30 +897,65 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
                             border: Border(
                               bottom: BorderSide(color: Colors.grey[300]!),
                             ),
-                            color: index % 2 == 0
-                                ? Colors.white
-                                : Colors.grey[50],
+                            color:
+                                index % 2 == 0 ? Colors.white : Colors.grey[50],
                           ),
                           child: Row(
                             children: [
-                              Expanded(flex: 2, child: _buildDataCell(food.name, isTitle: true)),
-                              Expanded(flex: 1, child: _buildDataCell("${food.price} so'm")),
-                              Expanded(flex: 1, child: _buildDataCell(food.unit)),
-                              Expanded(flex: 1, child: _buildDataCell(food.soni.toString())),
-                              Expanded(flex: 1, child: _buildDataCell(food.expiration?.substring(0, 10) ?? '')),
-                              Expanded(flex: 2, child: _buildDataCell(categoryTitle)),
-                              Expanded(flex: 2, child: _buildDataCell(food.subcategory.isNotEmpty ? food.subcategory : '-')),
+                              Expanded(
+                                flex: 2,
+                                child: _buildDataCell(food.name, isTitle: true),
+                              ),
+                              Expanded(
+                                flex: 1,
+                                child: _buildDataCell("${food.price} so'm"),
+                              ),
+                              Expanded(
+                                flex: 1,
+                                child: _buildDataCell(food.unit),
+                              ),
+                              Expanded(
+                                flex: 1,
+                                child: _buildDataCell(food.soni.toString()),
+                              ),
+                              Expanded(
+                                flex: 1,
+                                child: _buildDataCell(
+                                  food.expiration?.substring(0, 10) ?? '',
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: _buildDataCell(categoryTitle),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: _buildDataCell(
+                                  food.subcategory.isNotEmpty
+                                      ? food.subcategory
+                                      : '-',
+                                ),
+                              ),
                               Expanded(
                                 flex: 1,
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     IconButton(
-                                      icon: const Icon(Icons.edit_outlined, color: Colors.blue, size: 18),
-                                      onPressed: () => _showEditFoodDialog(food),
+                                      icon: const Icon(
+                                        Icons.edit_outlined,
+                                        color: Colors.blue,
+                                        size: 18,
+                                      ),
+                                      onPressed:
+                                          () => _showEditFoodDialog(food),
                                     ),
                                     IconButton(
-                                      icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.red,
+                                        size: 18,
+                                      ),
                                       onPressed: () => _confirmDelete(food),
                                     ),
                                   ],
@@ -901,25 +975,26 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
       ),
     );
   }
+
   Future<void> _confirmDelete(Food food) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder:
           (context) => AlertDialog(
-        title: const Text("Tasdiqlash"),
-        content: Text("\"${food.name}\" mahsulotini o'chirmoqchimisiz?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Yo'q"),
+            title: const Text("Tasdiqlash"),
+            content: Text("\"${food.name}\" mahsulotini o'chirmoqchimisiz?"),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("Yo'q"),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text("Ha", style: TextStyle(color: Colors.white)),
+              ),
+            ],
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Ha", style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
     );
 
     if (confirmed == true) {
@@ -929,14 +1004,14 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
           barrierDismissible: false,
           builder:
               (context) => const AlertDialog(
-            content: Row(
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(width: 20),
-                Text('O\'chirilmoqda...'),
-              ],
-            ),
-          ),
+                content: Row(
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(width: 20),
+                    Text('O\'chirilmoqda...'),
+                  ],
+                ),
+              ),
         );
         await deleteFood(widget.token, food.id);
         if (!mounted) return;
@@ -959,22 +1034,26 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
   }
 
   Future<void> deleteFood(String token, String foodId) async {
+    final api = await UserDatas().getApi();
+
     final response = await http.delete(
-      Uri.parse('${ApiConfig.baseUrl}/foods/delete/$foodId'),
+      Uri.parse('$api/foods/delete/$foodId'),
       headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode != 200) {
       final errorBody =
-      response.body.isNotEmpty
-          ? jsonDecode(response.body)['message'] ?? response.body
-          : 'Noma\'lum xatolik';
+          response.body.isNotEmpty
+              ? jsonDecode(response.body)['message'] ?? response.body
+              : 'Noma\'lum xatolik';
       throw Exception('Mahsulotni o\'chirishda xatolik: $errorBody');
     }
   }
 
   Future<List<Food>> fetchFoods(String token) async {
+    final api = await UserDatas().getApi();
+
     final res = await http.get(
-      Uri.parse('${ApiConfig.baseUrl}/foods/list'),
+      Uri.parse('$api/foods/list'),
       headers: {'Authorization': 'Bearer $token'},
     );
     if (res.statusCode == 200) {
@@ -987,8 +1066,10 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
   }
 
   Future<List<Category>> fetchCategories(String token) async {
+    final api = await UserDatas().getApi();
+
     final res = await http.get(
-      Uri.parse('${ApiConfig.baseUrl}/categories/list'),
+      Uri.parse('$api/categories/list'),
       headers: {'Authorization': 'Bearer $token'},
     );
     if (res.statusCode == 200) {
@@ -996,7 +1077,9 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
       final list = data is List ? data : data['categories'] as List? ?? [];
       final categories = list.map((c) => Category.fromJson(c)).toList();
       for (var category in categories) {
-        debugPrint('Kategoriya ID: ${category.id}, Title: ${category.title}, Subkategoriyalar: ${category.subcategories}');
+        debugPrint(
+          'Kategoriya ID: ${category.id}, Title: ${category.title}, Subkategoriyalar: ${category.subcategories}',
+        );
       }
       return categories;
     } else {
@@ -1005,8 +1088,10 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
   }
 
   Future<List<Department>> fetchDepartments(String token) async {
+    final api = await UserDatas().getApi();
+
     final res = await http.get(
-      Uri.parse('${ApiConfig.baseUrl}/departments/list'),
+      Uri.parse('$api/departments/list'),
       headers: {'Authorization': 'Bearer $token'},
     );
     if (res.statusCode == 200) {
@@ -1014,7 +1099,9 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
       final list = data is List ? data : data['departments'] as List? ?? [];
       final departments = list.map((d) => Department.fromJson(d)).toList();
       for (var department in departments) {
-        debugPrint('Department ID: ${department.id}, Title: ${department.title}, Warehouse: ${department.warehouse}');
+        debugPrint(
+          'Department ID: ${department.id}, Title: ${department.title}, Warehouse: ${department.warehouse}',
+        );
       }
       return departments;
     } else {
@@ -1023,17 +1110,17 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
   }
 
   Future<void> createFood(
-      String token,
-      String name,
-      int price,
-      String categoryId,
-      String subcategory,
-      String departmentId,
-      String warehouse,
-      String unit,
-      int soni,
-      String? expiration,
-      ) async {
+    String token,
+    String name,
+    int price,
+    String categoryId,
+    String subcategory,
+    String departmentId,
+    String warehouse,
+    String unit,
+    int soni,
+    String? expiration,
+  ) async {
     // Expiration ni to'g'ri formatda tayyorlaymiz
     String? formattedExpiration;
     if (expiration != null && expiration.isNotEmpty) {
@@ -1068,9 +1155,10 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
     }
 
     debugPrint('API ga yuborilayotgan ma\'lumotlar: ${jsonEncode(foodData)}');
+    final api = await UserDatas().getApi();
 
     final response = await http.post(
-      Uri.parse('${ApiConfig.baseUrl}/foods/create'),
+      Uri.parse('$api/foods/create'),
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
@@ -1082,26 +1170,27 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
     debugPrint('API javobi body: ${response.body}');
 
     if (response.statusCode != 201) {
-      final errorMessage = response.body.isNotEmpty
-          ? jsonDecode(response.body)['message'] ?? 'Noma\'lum xatolik'
-          : 'Noma\'lum xatolik';
+      final errorMessage =
+          response.body.isNotEmpty
+              ? jsonDecode(response.body)['message'] ?? 'Noma\'lum xatolik'
+              : 'Noma\'lum xatolik';
       throw Exception("Mahsulot qo'shishda xatolik: $errorMessage");
     }
   }
 
   Future<void> updateFood(
-      String token,
-      String foodId,
-      String name,
-      int price,
-      String categoryId,
-      String subcategory,
-      String departmentId,
-      String warehouse,
-      String unit,
-      int soni,
-      String? expiration,
-      ) async {
+    String token,
+    String foodId,
+    String name,
+    int price,
+    String categoryId,
+    String subcategory,
+    String departmentId,
+    String warehouse,
+    String unit,
+    int soni,
+    String? expiration,
+  ) async {
     // Expiration ni to'g'ri formatda tayyorlaymiz
     String? formattedExpiration;
     if (expiration != null && expiration.isNotEmpty) {
@@ -1130,9 +1219,10 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
     if (formattedExpiration != null) {
       foodData['expiration'] = formattedExpiration;
     }
+    final api = await UserDatas().getApi();
 
     final response = await http.put(
-      Uri.parse('${ApiConfig.baseUrl}/foods/update/$foodId'),
+      Uri.parse('$api/foods/update/$foodId'),
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
@@ -1142,9 +1232,9 @@ class _FoodsTablePageState extends State<FoodsTablePage> {
 
     if (response.statusCode != 200) {
       final errorMessage =
-      response.body.isNotEmpty
-          ? jsonDecode(response.body)['message'] ?? 'Noma\'lum xatolik'
-          : 'Noma\'lum xatolik';
+          response.body.isNotEmpty
+              ? jsonDecode(response.body)['message'] ?? 'Noma\'lum xatolik'
+              : 'Noma\'lum xatolik';
       throw Exception("Mahsulotni yangilashda xatolik: $errorMessage");
     }
   }

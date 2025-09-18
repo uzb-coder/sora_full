@@ -1,8 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-
-import '../../../Global/Api_global.dart';
+import 'package:sora/data/user_datas.dart';
 
 class Printer {
   final String id;
@@ -48,10 +47,11 @@ class Category {
     List<Subcategory> subcategoriesList = [];
 
     if (subcategoriesJson != null && subcategoriesJson is List) {
-      subcategoriesList = subcategoriesJson
-          .where((e) => e != null)
-          .map((e) => Subcategory.fromJson(e as Map<String, dynamic>))
-          .toList();
+      subcategoriesList =
+          subcategoriesJson
+              .where((e) => e != null)
+              .map((e) => Subcategory.fromJson(e as Map<String, dynamic>))
+              .toList();
     }
 
     return Category(
@@ -64,8 +64,10 @@ class Category {
 }
 
 Future<List<Category>> fetchCategories(String token) async {
+  final api = await UserDatas().getApi();
+
   final response = await http.get(
-    Uri.parse('${ApiConfig.baseUrl}/categories/list'),
+    Uri.parse('$api/categories/list'),
     headers: {'Authorization': 'Bearer $token'},
   );
 
@@ -73,8 +75,10 @@ Future<List<Category>> fetchCategories(String token) async {
     final data = jsonDecode(response.body);
     final List categoriesJson = data['categories'] ?? [];
     return categoriesJson
-        .map((categoryJson) =>
-        Category.fromJson(categoryJson as Map<String, dynamic>))
+        .map(
+          (categoryJson) =>
+              Category.fromJson(categoryJson as Map<String, dynamic>),
+        )
         .toList();
   } else {
     throw Exception('Категория юклаб бўлмади');
@@ -82,8 +86,10 @@ Future<List<Category>> fetchCategories(String token) async {
 }
 
 Future<List<Printer>> fetchPrinters(String token) async {
+  final api = await UserDatas().getApi();
+
   final response = await http.get(
-    Uri.parse('${ApiConfig.baseUrl}/printers'),
+    Uri.parse('$api/printers'),
     headers: {'Authorization': 'Bearer $token'},
   );
 
@@ -124,37 +130,43 @@ class _CategoryTablePageState extends State<CategoryTablePage> {
   void _confirmDelete(String id) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          "Категорияни ўчириш",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: const Text("Ростдан ҳам ўчирмоқчимисиз?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Йўқ"),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _deleteCategory(id);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      builder:
+          (_) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
-            child: const Text("Ҳа", style: TextStyle(color: Colors.white)),
+            title: const Text(
+              "Категорияни ўчириш",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            content: const Text("Ростдан ҳам ўчирмоқчимисиз?"),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Йўқ"),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _deleteCategory(id);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text("Ҳа", style: TextStyle(color: Colors.white)),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
   Future<void> _deleteCategory(String id) async {
+    final api = await UserDatas().getApi();
     final res = await http.delete(
-      Uri.parse('${ApiConfig.baseUrl}/categories/delete/$id'),
+      Uri.parse('$api/categories/delete/$id'),
       headers: {'Authorization': 'Bearer ${widget.token}'},
     );
     if (res.statusCode == 200) _refresh();
@@ -163,18 +175,20 @@ class _CategoryTablePageState extends State<CategoryTablePage> {
   void _openAddCategoryDialog() {
     showDialog(
       context: context,
-      builder: (_) => AddCategoryDialog(token: widget.token, onRefresh: _refresh),
+      builder:
+          (_) => AddCategoryDialog(token: widget.token, onRefresh: _refresh),
     );
   }
 
   void _openEditCategoryDialog(Category category) {
     showDialog(
       context: context,
-      builder: (_) => EditCategoryDialog(
-        token: widget.token,
-        category: category,
-        onRefresh: _refresh,
-      ),
+      builder:
+          (_) => EditCategoryDialog(
+            token: widget.token,
+            category: category,
+            onRefresh: _refresh,
+          ),
     );
   }
 
@@ -196,7 +210,9 @@ class _CategoryTablePageState extends State<CategoryTablePage> {
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.blue,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
           ],
@@ -227,12 +243,16 @@ class _CategoryTablePageState extends State<CategoryTablePage> {
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: ConstrainedBox(
-                        constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                        constraints: BoxConstraints(
+                          minWidth: constraints.maxWidth,
+                        ),
                         child: DataTable(
                           headingRowColor: MaterialStateColor.resolveWith(
-                                  (states) => Colors.grey[200]!),
+                            (states) => Colors.grey[200]!,
+                          ),
                           dataRowColor: MaterialStateColor.resolveWith(
-                                  (states) => Colors.white),
+                            (states) => Colors.white,
+                          ),
                           columnSpacing: 20,
                           columns: const [
                             DataColumn(
@@ -246,42 +266,57 @@ class _CategoryTablePageState extends State<CategoryTablePage> {
                             DataColumn(label: Text("Субкатегориялар")),
                             DataColumn(label: Text("Амал")),
                           ],
-                          rows: categories.map((cat) {
-                            return DataRow(
-                              cells: [
-                                DataCell(Text(cat.title)),
-                                DataCell(Text(cat.printer.name)),
-                                DataCell(Text(cat.printer.ip)),
-                                DataCell(
-                                  Wrap(
-                                    spacing: 8, // elementlar orasidagi bo‘shliq
-                                    runSpacing: 4, // joy yetmasa yangi qatorga tushish
-                                    children: cat.subcategories
-                                        .map((sub) => Text("|  ${sub.title} | "))
-                                        .toList(),
-                                  ),
-                                ),
+                          rows:
+                              categories.map((cat) {
+                                return DataRow(
+                                  cells: [
+                                    DataCell(Text(cat.title)),
+                                    DataCell(Text(cat.printer.name)),
+                                    DataCell(Text(cat.printer.ip)),
+                                    DataCell(
+                                      Wrap(
+                                        spacing:
+                                            8, // elementlar orasidagi bo‘shliq
+                                        runSpacing:
+                                            4, // joy yetmasa yangi qatorga tushish
+                                        children:
+                                            cat.subcategories
+                                                .map(
+                                                  (sub) => Text(
+                                                    "|  ${sub.title} | ",
+                                                  ),
+                                                )
+                                                .toList(),
+                                      ),
+                                    ),
 
-                                DataCell(
-                                  Row(
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.edit,
-                                            color: Colors.blue),
-                                        onPressed: () =>
-                                            _openEditCategoryDialog(cat),
+                                    DataCell(
+                                      Row(
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.edit,
+                                              color: Colors.blue,
+                                            ),
+                                            onPressed:
+                                                () => _openEditCategoryDialog(
+                                                  cat,
+                                                ),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.delete,
+                                              color: Colors.red,
+                                            ),
+                                            onPressed:
+                                                () => _confirmDelete(cat.id),
+                                          ),
+                                        ],
                                       ),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete,
-                                            color: Colors.red),
-                                        onPressed: () => _confirmDelete(cat.id),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            );
-                          }).toList(),
+                                    ),
+                                  ],
+                                );
+                              }).toList(),
                         ),
                       ),
                     ),
@@ -299,7 +334,11 @@ class _CategoryTablePageState extends State<CategoryTablePage> {
 class AddCategoryDialog extends StatefulWidget {
   final String token;
   final VoidCallback onRefresh;
-  const AddCategoryDialog({super.key, required this.token, required this.onRefresh});
+  const AddCategoryDialog({
+    super.key,
+    required this.token,
+    required this.onRefresh,
+  });
 
   @override
   State<AddCategoryDialog> createState() => _AddCategoryDialogState();
@@ -339,9 +378,10 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
       "printer_id": _selectedPrinter?.id,
       "subcategories": _subcategories.map((e) => {"title": e}).toList(),
     };
+    final api = await UserDatas().getApi();
 
     final response = await http.post(
-      Uri.parse('${ApiConfig.baseUrl}/categories/create'),
+      Uri.parse('$api/categories/create'),
       headers: {
         'Authorization': 'Bearer ${widget.token}',
         'Content-Type': 'application/json',
@@ -353,7 +393,9 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
       Navigator.pop(context);
       widget.onRefresh();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Хатолик: ${response.body}")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Хатолик: ${response.body}")));
     }
   }
 
@@ -375,21 +417,26 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
               controller: _categoryNameController,
               decoration: InputDecoration(
                 labelText: "Категория номи",
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<Printer>(
               decoration: InputDecoration(
                 labelText: "Принтер танланг",
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
-              items: _printers.map((printer) {
-                return DropdownMenuItem(
-                  value: printer,
-                  child: Text(printer.name),
-                );
-              }).toList(),
+              items:
+                  _printers.map((printer) {
+                    return DropdownMenuItem(
+                      value: printer,
+                      child: Text(printer.name),
+                    );
+                  }).toList(),
               value: _selectedPrinter,
               onChanged: (value) => setState(() => _selectedPrinter = value),
             ),
@@ -401,11 +448,16 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
                     controller: _subcategoryController,
                     decoration: InputDecoration(
                       labelText: "Субкатегория номи",
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
                 ),
-                IconButton(onPressed: _addSubcategory, icon: const Icon(Icons.add)),
+                IconButton(
+                  onPressed: _addSubcategory,
+                  icon: const Icon(Icons.add),
+                ),
               ],
             ),
             if (_subcategories.isNotEmpty)
@@ -427,7 +479,9 @@ class _AddCategoryDialogState extends State<AddCategoryDialog> {
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.lightBlue,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
           child: const Text("Сақлаш", style: TextStyle(color: Colors.black)),
         ),
@@ -440,7 +494,12 @@ class EditCategoryDialog extends StatefulWidget {
   final String token;
   final Category category;
   final VoidCallback onRefresh;
-  const EditCategoryDialog({super.key, required this.token, required this.category, required this.onRefresh});
+  const EditCategoryDialog({
+    super.key,
+    required this.token,
+    required this.category,
+    required this.onRefresh,
+  });
 
   @override
   State<EditCategoryDialog> createState() => _EditCategoryDialogState();
@@ -463,7 +522,7 @@ class _EditCategoryDialogState extends State<EditCategoryDialog> {
       setState(() {
         _printers = list;
         _selectedPrinter = list.firstWhere(
-              (printer) => printer.id == widget.category.printer.id,
+          (printer) => printer.id == widget.category.printer.id,
           orElse: () => list.first,
         );
       });
@@ -492,9 +551,10 @@ class _EditCategoryDialogState extends State<EditCategoryDialog> {
       "printer_id": _selectedPrinter?.id,
       "subcategories": _subcategories.map((e) => {"title": e}).toList(),
     };
+    final api = await UserDatas().getApi();
 
     final response = await http.put(
-      Uri.parse('${ApiConfig.baseUrl}/categories/update/${widget.category.id}'),
+      Uri.parse('$api/categories/update/${widget.category.id}'),
       headers: {
         'Authorization': 'Bearer ${widget.token}',
         'Content-Type': 'application/json',
@@ -506,7 +566,9 @@ class _EditCategoryDialogState extends State<EditCategoryDialog> {
       Navigator.pop(context);
       widget.onRefresh();
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Хатолик: ${response.body}")));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Хатолик: ${response.body}")));
     }
   }
 
@@ -528,21 +590,26 @@ class _EditCategoryDialogState extends State<EditCategoryDialog> {
               controller: _titleController,
               decoration: InputDecoration(
                 labelText: "Категория номи",
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<Printer>(
               decoration: InputDecoration(
                 labelText: "Принтер танланг",
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
-              items: _printers.map((printer) {
-                return DropdownMenuItem(
-                  value: printer,
-                  child: Text(printer.name),
-                );
-              }).toList(),
+              items:
+                  _printers.map((printer) {
+                    return DropdownMenuItem(
+                      value: printer,
+                      child: Text(printer.name),
+                    );
+                  }).toList(),
               value: _selectedPrinter,
               onChanged: (value) => setState(() => _selectedPrinter = value),
             ),
@@ -554,21 +621,27 @@ class _EditCategoryDialogState extends State<EditCategoryDialog> {
                     controller: _subcategoryController,
                     decoration: InputDecoration(
                       labelText: "Субкатегория қўшиш",
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
                 ),
-                IconButton(onPressed: _addSubcategory, icon: const Icon(Icons.add)),
+                IconButton(
+                  onPressed: _addSubcategory,
+                  icon: const Icon(Icons.add),
+                ),
               ],
             ),
             Wrap(
               spacing: 6,
-              children: _subcategories.map((sub) {
-                return Chip(
-                  label: Text(sub),
-                  onDeleted: () => _removeSubcategory(sub),
-                );
-              }).toList(),
+              children:
+                  _subcategories.map((sub) {
+                    return Chip(
+                      label: Text(sub),
+                      onDeleted: () => _removeSubcategory(sub),
+                    );
+                  }).toList(),
             ),
           ],
         ),
@@ -584,7 +657,9 @@ class _EditCategoryDialogState extends State<EditCategoryDialog> {
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.lightBlue,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
           child: const Text("Сақлаш", style: TextStyle(color: Colors.black)),
         ),

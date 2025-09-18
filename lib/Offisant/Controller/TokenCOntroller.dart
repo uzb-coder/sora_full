@@ -2,11 +2,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sora/Global/Api_global.dart';
+import 'package:sora/data/user_datas.dart';
 
 class AuthService {
-  static const String baseUrl = "${ApiConfig.baseUrl}";
-
   static String? _userCode;
   static String? _password;
 
@@ -15,6 +13,7 @@ class AuthService {
     _userCode = userCode;
     _password = password;
   }
+
   // Tokenni local storage (SharedPreferences) ga saqlash
   static Future<void> saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
@@ -34,8 +33,9 @@ class AuthService {
       print("❌ Xatolik: userCode yoki password o‘rnatilmagan.");
       return;
     }
+    final api = await UserDatas().getApi();
 
-    final Uri loginUrl = Uri.parse('$baseUrl/auth/login');
+    final Uri loginUrl = Uri.parse('$api/auth/login');
 
     print("Yuborilayotgan ma'lumot: user_code=$_userCode, password=$_password");
 
@@ -43,10 +43,7 @@ class AuthService {
       final response = await http.post(
         loginUrl,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'user_code': _userCode,
-          'password': _password,
-        }),
+        body: jsonEncode({'user_code': _userCode, 'password': _password}),
       );
 
       print("📥 Status Code: ${response.statusCode}");
@@ -58,7 +55,9 @@ class AuthService {
         await saveToken(token);
         print("✅ Token muvaffaqiyatli olindi: $token");
       } else {
-        print("❌ Login xatolik. Status: ${response.statusCode}, Body: ${response.body}");
+        print(
+          "❌ Login xatolik. Status: ${response.statusCode}, Body: ${response.body}",
+        );
       }
     } catch (e) {
       print("❗ Xatolik yuz berdi: $e");

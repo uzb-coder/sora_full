@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:sora/Global/Api_global.dart';
+import 'package:sora/data/user_datas.dart';
 import 'Blyuda.dart';
 import 'Printer.dart';
 import 'kategorya.dart';
+
 class MainScreen extends StatefulWidget {
   final String token;
 
@@ -55,10 +56,7 @@ class _MainScreenState extends State<MainScreen> {
       body: Column(
         children: [
           Expanded(
-            child: IndexedStack(
-              index: _selectedIndex,
-              children: _cachedPages,
-            ),
+            child: IndexedStack(index: _selectedIndex, children: _cachedPages),
           ),
           const Divider(height: 1),
           Container(
@@ -95,8 +93,6 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-
-
 class DepartmentsDataTable extends StatefulWidget {
   final String token;
   const DepartmentsDataTable({super.key, required this.token});
@@ -121,8 +117,9 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
       _isLoading = true;
       _error = null;
     });
+    final api = await UserDatas().getApi();
 
-    final url = Uri.parse('${ApiConfig.baseUrl}/departments/list');
+    final url = Uri.parse('$api/departments/list');
 
     try {
       final response = await http.get(
@@ -151,7 +148,9 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
   }
 
   Future<void> _createDepartment(String title, String warehouse) async {
-    final url = Uri.parse('${ApiConfig.baseUrl}/departments/create');
+    final api = await UserDatas().getApi();
+
+    final url = Uri.parse('$api/departments/create');
     final body = json.encode({"title": title, "warehouse": warehouse});
 
     try {
@@ -172,14 +171,20 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Internet xatolik: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Internet xatolik: $e")));
     }
   }
 
-  Future<void> _updateDepartment(String id, String title, String warehouse) async {
-    final url = Uri.parse('${ApiConfig.baseUrl}/departments/update/$id');
+  Future<void> _updateDepartment(
+    String id,
+    String title,
+    String warehouse,
+  ) async {
+    final api = await UserDatas().getApi();
+
+    final url = Uri.parse('$api/departments/update/$id');
     final body = json.encode({"title": title, "warehouse": warehouse});
 
     try {
@@ -196,35 +201,45 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
         await _fetchDepartments();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Yangilashda xatolik: ${response.statusCode}")),
+          SnackBar(
+            content: Text("Yangilashda xatolik: ${response.statusCode}"),
+          ),
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Internet xatolik: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Internet xatolik: $e")));
     }
   }
 
   Future<void> _deleteDepartment(String id) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("O‘chirishni tasdiqlang"),
-        content: const Text("Haqiqatan ham ushbu bo‘limni o‘chirmoqchimisiz?"),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text("Yo‘q")),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text("Ha"),
+      builder:
+          (context) => AlertDialog(
+            title: const Text("O‘chirishni tasdiqlang"),
+            content: const Text(
+              "Haqiqatan ham ushbu bo‘limni o‘chirmoqchimisiz?",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text("Yo‘q"),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text("Ha"),
+              ),
+            ],
           ),
-        ],
-      ),
     );
 
     if (confirm == true) {
-      final url = Uri.parse('${ApiConfig.baseUrl}/departments/delete/$id');
+      final api = await UserDatas().getApi();
+
+      final url = Uri.parse('$api/departments/delete/$id');
 
       try {
         final response = await http.delete(
@@ -236,25 +251,34 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
           await _fetchDepartments();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("O‘chirishda xatolik: ${response.statusCode}")),
+            SnackBar(
+              content: Text("O‘chirishda xatolik: ${response.statusCode}"),
+            ),
           );
         }
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Internet xatolik: $e")),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Internet xatolik: $e")));
       }
     }
   }
 
-  void _showDepartmentDialog({bool isEdit = false, String? id, String? initialTitle, String? initialWarehouse}) {
+  void _showDepartmentDialog({
+    bool isEdit = false,
+    String? id,
+    String? initialTitle,
+    String? initialWarehouse,
+  }) {
     final titleController = TextEditingController(text: initialTitle ?? '');
-    final warehouseController = TextEditingController(text: initialWarehouse ?? '');
+    final warehouseController = TextEditingController(
+      text: initialWarehouse ?? '',
+    );
 
     showDialog(
       context: context,
       builder: (context) {
-        bool isLoading = false;  // Dialog ichidagi loading flag
+        bool isLoading = false; // Dialog ichidagi loading flag
 
         return StatefulBuilder(
           builder: (context, setStateDialog) {
@@ -265,9 +289,16 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
 
               try {
                 if (isEdit && id != null) {
-                  await _updateDepartment(id, titleController.text, warehouseController.text);
+                  await _updateDepartment(
+                    id,
+                    titleController.text,
+                    warehouseController.text,
+                  );
                 } else {
-                  await _createDepartment(titleController.text, warehouseController.text);
+                  await _createDepartment(
+                    titleController.text,
+                    warehouseController.text,
+                  );
                 }
                 Navigator.of(context).pop();
               } finally {
@@ -279,10 +310,15 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
 
             return AlertDialog(
               alignment: Alignment.center,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               title: Text(
                 isEdit ? "Bo‘limni tahrirlash" : "Yangi bo‘lim qo‘shish",
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                ),
               ),
               content: SizedBox(
                 width: 400,
@@ -293,7 +329,9 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
                       controller: titleController,
                       decoration: InputDecoration(
                         labelText: "Bo‘lim nomi",
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                       enabled: !isLoading,
                     ),
@@ -302,7 +340,9 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
                       controller: warehouseController,
                       decoration: InputDecoration(
                         labelText: "Ombor nomi",
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                       enabled: !isLoading,
                     ),
@@ -314,7 +354,10 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
                   ],
                 ),
               ),
-              actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              actionsPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 10,
+              ),
               actions: [
                 TextButton(
                   onPressed: isLoading ? null : () => Navigator.pop(context),
@@ -324,7 +367,10 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
                   onPressed: isLoading ? null : save,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.lightBlue,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -390,10 +436,16 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
                   return SingleChildScrollView(
                     scrollDirection: Axis.vertical,
                     child: ConstrainedBox(
-                      constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                      constraints: BoxConstraints(
+                        minWidth: constraints.maxWidth,
+                      ),
                       child: DataTable(
-                        headingRowColor: MaterialStateProperty.all(Colors.grey[300]),
-                        dataRowColor: MaterialStateProperty.all(Colors.grey[100]),
+                        headingRowColor: MaterialStateProperty.all(
+                          Colors.grey[300],
+                        ),
+                        dataRowColor: MaterialStateProperty.all(
+                          Colors.grey[100],
+                        ),
                         headingTextStyle: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.black87,
@@ -406,33 +458,45 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
                           DataColumn(label: Text('Ombor')),
                           DataColumn(label: Text('Amallar')),
                         ],
-                        rows: _departments.map((dep) {
-                          return DataRow(
-                            cells: [
-                              DataCell(Text(dep['title'] ?? '')),
-                              DataCell(Text(dep['warehouse'] ?? '')),
-                              DataCell(Row(
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit, color: Colors.blue),
-                                    onPressed: () {
-                                      _showDepartmentDialog(
-                                        isEdit: true,
-                                        id: dep['_id'],
-                                        initialTitle: dep['title'],
-                                        initialWarehouse: dep['warehouse'],
-                                      );
-                                    },
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, color: Colors.red),
-                                    onPressed: () => _deleteDepartment(dep['_id']),
+                        rows:
+                            _departments.map((dep) {
+                              return DataRow(
+                                cells: [
+                                  DataCell(Text(dep['title'] ?? '')),
+                                  DataCell(Text(dep['warehouse'] ?? '')),
+                                  DataCell(
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.edit,
+                                            color: Colors.blue,
+                                          ),
+                                          onPressed: () {
+                                            _showDepartmentDialog(
+                                              isEdit: true,
+                                              id: dep['_id'],
+                                              initialTitle: dep['title'],
+                                              initialWarehouse:
+                                                  dep['warehouse'],
+                                            );
+                                          },
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.delete,
+                                            color: Colors.red,
+                                          ),
+                                          onPressed:
+                                              () =>
+                                                  _deleteDepartment(dep['_id']),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ],
-                              )),
-                            ],
-                          );
-                        }).toList(),
+                              );
+                            }).toList(),
                       ),
                     ),
                   );
@@ -445,4 +509,3 @@ class _DepartmentsDataTableState extends State<DepartmentsDataTable> {
     );
   }
 }
-

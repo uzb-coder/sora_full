@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:sora/Global/my_pkg.dart';
+import 'package:sora/setting/setting_page.dart';
 
 import 'Offisant/Page/Users_page.dart';
 
@@ -66,127 +67,141 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xffeae3e3),
-      body: SafeArea(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Center(
-              child: Container(
-                width: logoSize > 350 ? 350 : logoSize, // maksimal 350 px
-                height: logoSize > 350 ? 350 : logoSize,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: IconButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SettingPage()),
+                );
+              },
+              icon: Icon(Icons.settings),
+            ),
+          ),
+        ],
+      ),
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Center(
+            child: Container(
+              width: logoSize > 350 ? 350 : logoSize, // maksimal 350 px
+              height: logoSize > 350 ? 350 : logoSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
 
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 8,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(10.0),
-                  child: ClipOval(
-                    child: Image.asset(
-                      'img/sora_logo_black.png',
-                      fit: BoxFit.contain,
-                    ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 8,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(10.0),
+                child: ClipOval(
+                  child: Image.asset(
+                    'img/sora_logo_black.png',
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),
             ),
-            SizedBox(height: screenHeight * 0.05),
+          ),
+          SizedBox(height: screenHeight * 0.05),
 
-            Text(
-              _timeString,
-              style: TextStyle(
-                fontFamily: 'Roboto',
-                fontWeight: FontWeight.w200,
-                fontSize: timeFontSize > 80 ? 80 : timeFontSize,
-                color: Colors.black87,
-                letterSpacing: 4,
-              ),
+          Text(
+            _timeString,
+            style: TextStyle(
+              fontFamily: 'Roboto',
+              fontWeight: FontWeight.w200,
+              fontSize: timeFontSize > 80 ? 80 : timeFontSize,
+              color: Colors.black87,
+              letterSpacing: 4,
             ),
-            SizedBox(height: screenHeight * 0.012),
+          ),
+          SizedBox(height: screenHeight * 0.012),
 
-            Text(
-              _dateString,
-              style: TextStyle(
-                fontSize: dateFontSize > 22 ? 22 : dateFontSize,
-                fontWeight: FontWeight.w300,
-                color: Colors.black54,
-              ),
+          Text(
+            _dateString,
+            style: TextStyle(
+              fontSize: dateFontSize > 22 ? 22 : dateFontSize,
+              fontWeight: FontWeight.w300,
+              color: Colors.black54,
             ),
-            SizedBox(height: screenHeight * 0.07),
+          ),
+          SizedBox(height: screenHeight * 0.07),
 
-            Center(
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const UserListPage(),
-                    ),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0d5720),
-                  padding: EdgeInsets.symmetric(
-                    horizontal:
-                        buttonPaddingHorizontal > 50
-                            ? 50
-                            : buttonPaddingHorizontal,
-                    vertical:
-                        buttonPaddingVertical > 30 ? 30 : buttonPaddingVertical,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  textStyle: TextStyle(
-                    fontSize: buttonFontSize > 18 ? 18 : buttonFontSize,
-                    fontWeight: FontWeight.bold,
-                  ),
+          Center(
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const UserListPage()),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0d5720),
+                padding: EdgeInsets.symmetric(
+                  horizontal:
+                      buttonPaddingHorizontal > 50
+                          ? 50
+                          : buttonPaddingHorizontal,
+                  vertical:
+                      buttonPaddingVertical > 30 ? 30 : buttonPaddingVertical,
                 ),
-                child: const Text(
-                  'Kirish',
-                  style: TextStyle(color: Colors.white),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                textStyle: TextStyle(
+                  fontSize: buttonFontSize > 18 ? 18 : buttonFontSize,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-            ),
-            SizedBox(height: screenHeight * 0.02),
-
-            Center(
-              child: ElevatedButton(
-                onPressed: () {
-                  exit(0);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0d5720),
-                  padding: EdgeInsets.symmetric(
-                    horizontal:
-                        buttonPaddingHorizontal > 50
-                            ? 50
-                            : buttonPaddingHorizontal,
-                    vertical:
-                        buttonPaddingVertical > 30 ? 30 : buttonPaddingVertical,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  textStyle: TextStyle(
-                    fontSize: buttonFontSize > 18 ? 18 : buttonFontSize,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                child: const Text(
-                  'Chiqish',
-                  style: TextStyle(color: Colors.white),
-                ),
+              child: const Text(
+                'Kirish',
+                style: TextStyle(color: Colors.white),
               ),
             ),
-          ],
-        ),
+          ),
+          SizedBox(height: screenHeight * 0.02),
+
+          Center(
+            child: ElevatedButton(
+              onPressed: () {
+                exit(0);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0d5720),
+                padding: EdgeInsets.symmetric(
+                  horizontal:
+                      buttonPaddingHorizontal > 50
+                          ? 50
+                          : buttonPaddingHorizontal,
+                  vertical:
+                      buttonPaddingVertical > 30 ? 30 : buttonPaddingVertical,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                textStyle: TextStyle(
+                  fontSize: buttonFontSize > 18 ? 18 : buttonFontSize,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              child: const Text(
+                'Chiqish',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

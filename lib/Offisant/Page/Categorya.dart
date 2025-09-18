@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:sora/Offisant/Page/Home.dart';
+import 'package:sora/data/user_datas.dart';
 import 'package:top_snackbar_flutter/top_snack_bar.dart';
 import 'dart:io';
 import 'dart:async';
 import '../../Admin/Page/Stollarni_joylashuv.dart';
-import '../../Global/Api_global.dart';
 import '../Controller/TokenCOntroller.dart';
 import '../Controller/usersCOntroller.dart';
 import '../Model/Ovqat_model.dart';
@@ -193,9 +193,10 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         });
         return;
       }
+      final api = await UserDatas().getApi();
 
       // API dan kategoriyalarni olish
-      final url = Uri.parse("${ApiConfig.baseUrl}/categories/list");
+      final url = Uri.parse("$api/categories/list");
 
       final response = await http
           .get(
@@ -252,9 +253,10 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         _filterProductsByCategory();
         return;
       }
+      final api = await UserDatas().getApi();
 
       // API dan mahsulotlarni olish
-      final url = Uri.parse("${ApiConfig.baseUrl}/foods/list");
+      final url = Uri.parse("$api/foods/list");
 
       final response = await http
           .get(
@@ -525,9 +527,10 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         'kassir_workflow': true,
         'table_number': widget.tableName ?? 'N/A',
       };
+      final api = await UserDatas().getApi();
 
       final response = await http.post(
-        Uri.parse("${ApiConfig.baseUrl}/orders/create"),
+        Uri.parse("$api/orders/create"),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $_token',
@@ -607,11 +610,10 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
               })
               .where((item) => item != null)
               .toList();
+      final api = await UserDatas().getApi();
 
       final response = await http.post(
-        Uri.parse(
-          "${ApiConfig.baseUrl}/orders/${widget.existingOrderId}/add-items",
-        ),
+        Uri.parse("$api/orders/${widget.existingOrderId}/add-items"),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ${widget.token}',

@@ -1,6 +1,7 @@
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:sora/data/user_datas.dart';
 import 'package:top_snackbar_flutter/top_snack_bar.dart';
 
 import '../../Global/my_pkg.dart';
@@ -199,11 +200,12 @@ class _PosScreenState extends State<PosScreen> {
     if (_token == null) return;
 
     setState(() => _isLoadingOrders = true);
+    final api = await UserDatas().getApi();
 
     try {
       final response = await http
           .get(
-            Uri.parse("${ApiConfig.baseUrl}/orders/table/$tableId"),
+            Uri.parse("$api/orders/table/$tableId"),
             headers: _authHeaders(), // ✅ to‘g‘ri
           )
           .timeout(const Duration(seconds: 10));
@@ -249,9 +251,11 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<void> _moveOrderToTable(String orderId, String newTableId) async {
+    final api = await UserDatas().getApi();
+
     try {
       final response = await http.put(
-        Uri.parse("${ApiConfig.baseUrl}/orders/move-table"),
+        Uri.parse("$api/orders/move-table"),
         headers: {
           'Authorization': 'Bearer ${widget.token}',
           'Content-Type': 'application/json',
@@ -307,13 +311,14 @@ class _PosScreenState extends State<PosScreen> {
     try {
       Map<String, bool> newStatus = {};
       Map<String, String> newOwners = {};
+      final api = await UserDatas().getApi();
 
       // Parallel requests bilan barcha stollarni tekshirish (tezroq)
       final futures = _tables.map((table) async {
         try {
           final response = await http
               .get(
-                Uri.parse('${ApiConfig.baseUrl}/orders/table/${table.id}'),
+                Uri.parse('$api/orders/table/${table.id}'),
                 headers: {
                   'Authorization': 'Bearer ${widget.token}',
                   'Content-Type': 'application/json',
@@ -391,11 +396,12 @@ class _PosScreenState extends State<PosScreen> {
 
   Future<void> _fetchOrdersForTableSilently(String tableId) async {
     if (_token == null) return;
+    final api = await UserDatas().getApi();
 
     try {
       final response = await http
           .get(
-            Uri.parse("${ApiConfig.baseUrl}/orders/table/$tableId"),
+            Uri.parse("$api/orders/table/$tableId"),
             headers: {
               'Authorization': 'Bearer ${widget.token}',
               'Content-Type': 'application/json',
@@ -529,13 +535,14 @@ class _PosScreenState extends State<PosScreen> {
     try {
       Map<String, bool> newStatus = {};
       Map<String, String> newOwners = {};
+      final api = await UserDatas().getApi();
 
       // Parallel requests bilan barcha stollarni tekshirish
       final futures = _tables.map((table) async {
         try {
           final response = await http
               .get(
-                Uri.parse('${ApiConfig.baseUrl}/orders/table/${table.id}'),
+                Uri.parse('$api/orders/table/${table.id}'),
                 headers: {
                   'Authorization': 'Bearer ${widget.token}',
                   'Content-Type': 'application/json',
@@ -595,13 +602,12 @@ class _PosScreenState extends State<PosScreen> {
 
   Future<void> _loadProductsAndCategories() async {
     setState(() => _isLoadingProducts = true);
+    final api = await UserDatas().getApi();
 
     try {
       // ✅ Mahsulotlarni olish
       Future<List<Ovqat>> fetchProducts() async {
-        final url = Uri.parse(
-          "${ApiConfig.baseUrl}/foods/list",
-        ); // <-- yo‘lni tekshiring
+        final url = Uri.parse("$api/foods/list"); // <-- yo‘lni tekshiring
 
         final response = await http.get(
           url,
@@ -626,7 +632,7 @@ class _PosScreenState extends State<PosScreen> {
       }
 
       Future<List<Category>> fetchCategories() async {
-        final url = Uri.parse("${ApiConfig.baseUrl}/categories/list");
+        final url = Uri.parse("$api/categories/list");
 
         final response = await http.get(
           url,
@@ -767,9 +773,11 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   // Stol Controller
-  static const String baseUrl = "${ApiConfig.baseUrl}";
+
   Future<List<StolModel>> fetchTables() async {
-    final url = Uri.parse("$baseUrl/tables/list");
+    final api = await UserDatas().getApi();
+
+    final url = Uri.parse("$api/tables/list");
     final response = await http.get(
       url,
       headers: {
@@ -861,7 +869,9 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Future<bool> closeOrder(String orderId) async {
-    const String apiUrl = "${ApiConfig.baseUrl}/orders/close/";
+    final api = await UserDatas().getApi();
+
+    final String apiUrl = "$api/orders/close/";
     try {
       final response = await http.put(
         Uri.parse("$apiUrl$orderId"),
@@ -1178,10 +1188,12 @@ class _PosScreenState extends State<PosScreen> {
     required String reason,
     required String notes,
   }) async {
+    final api = await UserDatas().getApi();
+
     try {
       final response = await http
           .post(
-            Uri.parse('$baseUrl/orders/$orderId/cancel-item'),
+            Uri.parse('$api/orders/$orderId/cancel-item'),
             headers: {
               'Authorization': 'Bearer ${widget.token}',
               'Content-Type': 'application/json',

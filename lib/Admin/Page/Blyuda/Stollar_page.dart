@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:sora/Global/Api_global.dart';
+import 'package:sora/data/user_datas.dart';
 
 import '../Stollarni_joylashuv.dart';
 
@@ -24,7 +24,9 @@ class _TablesPageState extends State<TablesPage> {
   }
 
   Future<void> fetchTables() async {
-    final url = Uri.parse("${ApiConfig.baseUrl}/tables/list");
+    final api = await UserDatas().getApi();
+
+    final url = Uri.parse("$api/tables/list");
 
     try {
       final response = await http.get(
@@ -52,7 +54,9 @@ class _TablesPageState extends State<TablesPage> {
   }
 
   Future<void> addNewTable(String number, String guestCount) async {
-    final url = Uri.parse("${ApiConfig.baseUrl}/tables/create");
+    final api = await UserDatas().getApi();
+
+    final url = Uri.parse("$api/tables/create");
 
     final response = await http.post(
       url,
@@ -65,7 +69,7 @@ class _TablesPageState extends State<TablesPage> {
         "name": number, // name = number
         "guest_count": int.tryParse(guestCount) ?? 0,
         "status": "bo'sh",
-        "is_active": true
+        "is_active": true,
       }),
     );
 
@@ -79,7 +83,9 @@ class _TablesPageState extends State<TablesPage> {
   }
 
   Future<void> deleteTable(String id) async {
-    final url = Uri.parse("${ApiConfig.baseUrl}/tables/delete/$id");
+    final api = await UserDatas().getApi();
+
+    final url = Uri.parse("$api/tables/delete/$id");
 
     final response = await http.delete(
       url,
@@ -98,7 +104,9 @@ class _TablesPageState extends State<TablesPage> {
   }
 
   Future<void> updateTable(String id, String number, String guestCount) async {
-    final url = Uri.parse("${ApiConfig.baseUrl}/tables/update/$id");
+    final api = await UserDatas().getApi();
+
+    final url = Uri.parse("$api/tables/update/$id");
 
     final response = await http.put(
       url,
@@ -112,7 +120,7 @@ class _TablesPageState extends State<TablesPage> {
         "capacity": 0,
         "status": "bo'sh",
         "guest_count": int.tryParse(guestCount) ?? 0,
-        "is_active": true
+        "is_active": true,
       }),
     );
     if (response.statusCode == 200) {
@@ -130,135 +138,154 @@ class _TablesPageState extends State<TablesPage> {
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: Colors.grey[100],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text("Yangi stol qo‘shish", style: TextStyle(color: Colors.black87)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: numberController,
-              decoration: const InputDecoration(
-                labelText: "Stol raqami yoki nomi",
-                border: OutlineInputBorder(),
+      builder:
+          (_) => AlertDialog(
+            backgroundColor: Colors.grey[100],
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            title: const Text(
+              "Yangi stol qo‘shish",
+              style: TextStyle(color: Colors.black87),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: numberController,
+                  decoration: const InputDecoration(
+                    labelText: "Stol raqami yoki nomi",
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: guestCountController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: "Mehmonlar soni",
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text("Bekor qilish"),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: guestCountController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: "Mehmonlar soni",
-                border: OutlineInputBorder(),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xFF144D37),
+                ),
+                onPressed: () {
+                  final number = numberController.text.trim();
+                  final guestCount = guestCountController.text.trim();
+                  if (number.isNotEmpty && guestCount.isNotEmpty) {
+                    addNewTable(number, guestCount);
+                  }
+                },
+                child: const Text(
+                  "Qo‘shish",
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text("Bekor qilish"),
+            ],
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Color(0xFF144D37),
-            ),
-            onPressed: () {
-              final number = numberController.text.trim();
-              final guestCount = guestCountController.text.trim();
-              if (number.isNotEmpty && guestCount.isNotEmpty) {
-                addNewTable(number, guestCount);
-              }
-            },
-            child: const Text("Qo‘shish",style: TextStyle(color: Colors.white),),
-          ),
-        ],
-      ),
     );
   }
 
-
   void showEditTableModal(Map<String, dynamic> table) {
-    final TextEditingController numberController = TextEditingController(text: table['number'].toString());
-    final TextEditingController guestCountController = TextEditingController(text: table['guest_count'].toString());
+    final TextEditingController numberController = TextEditingController(
+      text: table['number'].toString(),
+    );
+    final TextEditingController guestCountController = TextEditingController(
+      text: table['guest_count'].toString(),
+    );
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: Colors.grey[100],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text("Stolni tahrirlash", style: TextStyle(color: Colors.black87)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: numberController,
-              decoration: const InputDecoration(
-                labelText: "Stol raqami",
-                border: OutlineInputBorder(),
+      builder:
+          (_) => AlertDialog(
+            backgroundColor: Colors.grey[100],
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            title: const Text(
+              "Stolni tahrirlash",
+              style: TextStyle(color: Colors.black87),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: numberController,
+                  decoration: const InputDecoration(
+                    labelText: "Stol raqami",
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: guestCountController,
+                  decoration: const InputDecoration(
+                    labelText: "Mehmonlar soni",
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text("Bekor qilish"),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: guestCountController,
-              decoration: const InputDecoration(
-                labelText: "Mehmonlar soni",
-                border: OutlineInputBorder(),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                onPressed: () {
+                  final number = numberController.text.trim();
+                  final guestCount = guestCountController.text.trim();
+                  if (number.isNotEmpty && guestCount.isNotEmpty) {
+                    updateTable(table['id'], number, guestCount);
+                  }
+                },
+                child: const Text("Saqlash"),
               ),
-              keyboardType: TextInputType.number,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text("Bekor qilish"),
+            ],
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-            ),
-            onPressed: () {
-              final number = numberController.text.trim();
-              final guestCount = guestCountController.text.trim();
-              if (number.isNotEmpty && guestCount.isNotEmpty) {
-                updateTable(table['id'], number, guestCount);
-              }
-            },
-            child: const Text("Saqlash"),
-          ),
-        ],
-      ),
     );
   }
-
 
   void showDeleteConfirmationDialog(String id) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: Colors.grey[100],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text("O‘chirishni tasdiqlang", style: TextStyle(color: Colors.black87)),
-        content: const Text("Haqiqatan ham o‘chirmoqchimisiz?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text("Yo‘q"),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
+      builder:
+          (_) => AlertDialog(
+            backgroundColor: Colors.grey[100],
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-            onPressed: () {
-              Navigator.of(context).pop();
-              deleteTable(id);
-            },
-            child: const Text("Ha"),
+            title: const Text(
+              "O‘chirishni tasdiqlang",
+              style: TextStyle(color: Colors.black87),
+            ),
+            content: const Text("Haqiqatan ham o‘chirmoqchimisiz?"),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text("Yo‘q"),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  deleteTable(id);
+                },
+                child: const Text("Ha"),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -270,56 +297,78 @@ class _TablesPageState extends State<TablesPage> {
       appBar: AppBar(
         centerTitle: true,
         backgroundColor: Colors.white,
-        title: const Text("Stollar ro'yxati",style: TextStyle(color: Colors.black),),
-        automaticallyImplyLeading: false, // standart back tugmasi olib tashlandi
+        title: const Text(
+          "Stollar ro'yxati",
+          style: TextStyle(color: Colors.black),
+        ),
+        automaticallyImplyLeading:
+            false, // standart back tugmasi olib tashlandi
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: constraints.maxWidth),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.vertical,
-                child: DataTable(
-                  columnSpacing: 24,
-                  dataRowHeight: 60,
-                  headingRowHeight: 56,
-                  columns: const [
-                    DataColumn(label: Text("Nomi")),
-                    DataColumn(label: Text("Sig‘imi")),
-                    DataColumn(label: Text("Amallar")),
-                  ],
-                  rows: tables.map((table) {
-                    return DataRow(cells: [
-                      DataCell(Text(table['number'].toString())),
-                      DataCell(Text(table['guest_count'].toString())), // Qo‘shildi
-                      DataCell(Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.edit, color: Color(0xFF144D37)),
-                            onPressed: () {
-                              showEditTableModal(table);
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () {
-                              showDeleteConfirmationDialog(table['id']);
-                            },
-                          ),
-                        ],
-                      )),
-                    ]);
-                  }).toList(),
-                ),
+      body:
+          isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minWidth: constraints.maxWidth,
+                      ),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.vertical,
+                        child: DataTable(
+                          columnSpacing: 24,
+                          dataRowHeight: 60,
+                          headingRowHeight: 56,
+                          columns: const [
+                            DataColumn(label: Text("Nomi")),
+                            DataColumn(label: Text("Sig‘imi")),
+                            DataColumn(label: Text("Amallar")),
+                          ],
+                          rows:
+                              tables.map((table) {
+                                return DataRow(
+                                  cells: [
+                                    DataCell(Text(table['number'].toString())),
+                                    DataCell(
+                                      Text(table['guest_count'].toString()),
+                                    ), // Qo‘shildi
+                                    DataCell(
+                                      Row(
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.edit,
+                                              color: Color(0xFF144D37),
+                                            ),
+                                            onPressed: () {
+                                              showEditTableModal(table);
+                                            },
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.delete,
+                                              color: Colors.red,
+                                            ),
+                                            onPressed: () {
+                                              showDeleteConfirmationDialog(
+                                                table['id'],
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }).toList(),
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
-            ),
-          );
-        },
-      ),
       bottomNavigationBar: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         color: Colors.grey[100],
@@ -345,7 +394,11 @@ class _TablesPageState extends State<TablesPage> {
                 icon: const Icon(Icons.location_on, size: 28),
                 label: const Text("Joylashuv"),
                 onPressed: () {
-                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => StollarniJoylashuv(token: widget.token,)));
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => StollarniJoylashuv(token: widget.token),
+                    ),
+                  );
                 },
               ),
             ),
@@ -397,11 +450,9 @@ class _TablesPageState extends State<TablesPage> {
             ),
 
             // O'ngdagi Joylashuvga yo'naltirish buttoni
-
           ],
         ),
       ),
     );
   }
-
 }

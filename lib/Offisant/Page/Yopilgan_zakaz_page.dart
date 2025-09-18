@@ -9,7 +9,8 @@ import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sora/Global/Api_global.dart';
+import 'package:sora/data/user_datas.dart';
+
 import 'package:win32/win32.dart';
 
 import '../../Gloabal_token.dart';
@@ -46,14 +47,13 @@ class OrderModel {
     this.completedAt,
     required this.items,
     required this.percentage, // 🔥 konstruktor
-
   });
 
   factory OrderModel.fromJson(Map<String, dynamic> json) {
     return OrderModel(
       id: json['_id'] ?? json['id'] ?? '',
       orderNumber:
-      json['orderNumber']?.toString() ??
+          json['orderNumber']?.toString() ??
           json['id']?.substring(18, 24) ??
           'N/A',
       tableNumber: json['tableNumber']?.toString() ?? 'N/A',
@@ -65,23 +65,24 @@ class OrderModel {
       status: json['status']?.toString() ?? 'N/A',
       receiptPrinted: json['receiptPrinted'] ?? false,
       createdAt:
-      json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'].toString()) ??
-          DateTime.now()
-          : DateTime.now(),
+          json['createdAt'] != null
+              ? DateTime.tryParse(json['createdAt'].toString()) ??
+                  DateTime.now()
+              : DateTime.now(),
       completedAt:
-      json['completedAt'] != null
-          ? DateTime.tryParse(json['completedAt'].toString())
-          : null,
+          json['completedAt'] != null
+              ? DateTime.tryParse(json['completedAt'].toString())
+              : null,
       items:
-      json['items'] != null
-          ? (json['items'] as List)
-          .map((item) => OrderItem.fromJson(item))
-          .toList()
-          : [],
-      percentage: json['waiter']?['percentage'] != null
-          ? (json['waiter']['percentage'] as num).toInt()
-          : 0,
+          json['items'] != null
+              ? (json['items'] as List)
+                  .map((item) => OrderItem.fromJson(item))
+                  .toList()
+              : [],
+      percentage:
+          json['waiter']?['percentage'] != null
+              ? (json['waiter']['percentage'] as num).toInt()
+              : 0,
     );
   }
 
@@ -165,7 +166,6 @@ class ApiResponse<T> {
 
 // AuthServices
 class AuthServices {
-  static const String baseUrl = "${ApiConfig.baseUrl}";
   static const String userCode = "2004";
   static const String password = "2004";
 
@@ -181,7 +181,9 @@ class AuthServices {
   }
 
   static Future<ApiResponse<String>> loginAndPrintToken() async {
-    final Uri loginUrl = Uri.parse('$baseUrl/auth/login');
+    final api = await UserDatas().getApi();
+
+    final Uri loginUrl = Uri.parse('$api/auth/login');
 
     try {
       print("🔐 Login so'rovi: $loginUrl");
@@ -255,9 +257,9 @@ class UsbPrinterService {
 
         for (var i = 0; i < count; i++) {
           final printerName =
-          printerInfo.elementAt(i).ref.pPrinterName.toDartString();
+              printerInfo.elementAt(i).ref.pPrinterName.toDartString();
           final portName =
-          printerInfo.elementAt(i).ref.pPortName.toDartString();
+              printerInfo.elementAt(i).ref.pPortName.toDartString();
 
           print("🖨️ Printer: $printerName, Port: $portName");
 
@@ -343,9 +345,9 @@ class UsbPrinterService {
   }
 
   Future<ApiResponse<bool>> _printToSpecificPrinter(
-      OrderModel order,
-      String printerName,
-      ) async {
+    OrderModel order,
+    String printerName,
+  ) async {
     final hPrinter = calloc<HANDLE>();
     final docInfo = calloc<DOC_INFO_1>();
 
@@ -539,8 +541,10 @@ class UsbPrinterService {
       // Hisob-kitob
       0x1B, 0x21, 0x00, // Oddiy shrift
       ...centerText("Mahsulotlar: ${formatNumber(order.subtotal)} so'm"),
-      ...centerText("Xizmat haqi (${order.percentage}%): ${formatNumber(order.serviceAmount)} so'm"
-      ),      0x0A, // Xizmat haqi va jami o'rtasida bo'shliq
+      ...centerText(
+        "Xizmat haqi (${order.percentage}%): ${formatNumber(order.serviceAmount)} so'm",
+      ),
+      0x0A, // Xizmat haqi va jami o'rtasida bo'shliq
       0x0A, // Qo'shimcha bo'shliq
       // Yakuniy summa (katta va qalin)
       0x1B, 0x21, 0x20, // Katta shrift
@@ -581,8 +585,8 @@ class UsbPrinterService {
       // Bo'sh joylar sonini hisoblash
       int spaceCount =
           lineLength -
-              utf8.encode(namePart).length -
-              utf8.encode(qtyTotal).length;
+          utf8.encode(namePart).length -
+          utf8.encode(qtyTotal).length;
       if (spaceCount < 1) spaceCount = 1;
 
       line += ' ' * spaceCount + qtyTotal;
@@ -623,7 +627,7 @@ class UsbPrinterService {
     final numStr = number.toString().split('.');
     return numStr[0].replaceAllMapped(
       RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-          (Match m) => '${m[1]} ',
+      (Match m) => '${m[1]} ',
     );
   }
 }
@@ -639,7 +643,6 @@ class OrderTablePage extends StatefulWidget {
 }
 
 class _OrderTablePageState extends State<OrderTablePage> {
-  final String baseUrl = "${ApiConfig.baseUrl}";
   String? _token;
   static const String _cacheKey = 'pending_orders_cache';
   static const String _cacheTimestampKey = 'pending_orders_timestamp';
@@ -708,13 +711,14 @@ class _OrderTablePageState extends State<OrderTablePage> {
           success: true,
           data: filteredOrders,
           message:
-          'Ma\'lumotlar keshdan yuklandi (${filteredOrders.length} ta)',
+              'Ma\'lumotlar keshdan yuklandi (${filteredOrders.length} ta)',
         );
       }
     }
+    final api = await UserDatas().getApi();
 
     // Serverdan ma'lumot olish
-    final url = Uri.parse('$baseUrl/orders/pending-payments');
+    final url = Uri.parse('$api/orders/pending-payments');
 
     try {
       final response = await http.get(
@@ -732,9 +736,9 @@ class _OrderTablePageState extends State<OrderTablePage> {
 
         if (data['success'] == true && data['pending_orders'] != null) {
           List<OrderModel> allOrders =
-          (data['pending_orders'] as List)
-              .map((order) => OrderModel.fromJson(order))
-              .toList();
+              (data['pending_orders'] as List)
+                  .map((order) => OrderModel.fromJson(order))
+                  .toList();
 
           List<OrderModel> filteredOrders = _applyFilters(
             allOrders,
@@ -750,7 +754,7 @@ class _OrderTablePageState extends State<OrderTablePage> {
             success: true,
             data: filteredOrders,
             message:
-            'Ma\'lumotlar serverdan yuklandi (${filteredOrders.length} ta)',
+                'Ma\'lumotlar serverdan yuklandi (${filteredOrders.length} ta)',
           );
         } else {
           return ApiResponse(
@@ -805,8 +809,9 @@ class _OrderTablePageState extends State<OrderTablePage> {
         message: 'Local yangilandi',
       );
     }
+    final api = await UserDatas().getApi();
 
-    final url = Uri.parse('$baseUrl/orders/$orderId');
+    final url = Uri.parse('$api/orders/$orderId');
     print('📝 Chek holati yangilanayotgan: $orderId');
 
     try {
@@ -843,7 +848,7 @@ class _OrderTablePageState extends State<OrderTablePage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final ordersJson =
-      orders.map((order) => jsonEncode(order.toJson())).toList();
+          orders.map((order) => jsonEncode(order.toJson())).toList();
       await prefs.setString(_cacheKey, jsonEncode(ordersJson));
       await prefs.setString(
         _cacheTimestampKey,
@@ -868,9 +873,9 @@ class _OrderTablePageState extends State<OrderTablePage> {
                 _cacheDurationMinutes) {
           final ordersJson = jsonDecode(cachedData) as List;
           final orders =
-          ordersJson
-              .map((json) => OrderModel.fromJson(jsonDecode(json)))
-              .toList();
+              ordersJson
+                  .map((json) => OrderModel.fromJson(jsonDecode(json)))
+                  .toList();
           print("📦 Keshdan ${orders.length} ta buyurtma yuklandi");
           return orders;
         }
@@ -894,11 +899,11 @@ class _OrderTablePageState extends State<OrderTablePage> {
   }
 
   List<OrderModel> _applyFilters(
-      List<OrderModel> orders,
-      DateTime? startDate,
-      DateTime? endDate,
-      String? waiterName,
-      ) {
+    List<OrderModel> orders,
+    DateTime? startDate,
+    DateTime? endDate,
+    String? waiterName,
+  ) {
     List<OrderModel> filteredOrders = orders;
 
     if (waiterName != null &&
@@ -908,9 +913,9 @@ class _OrderTablePageState extends State<OrderTablePage> {
           filteredOrders
               .where(
                 (order) => order.waiterName.toLowerCase().contains(
-              waiterName.toLowerCase(),
-            ),
-          )
+                  waiterName.toLowerCase(),
+                ),
+              )
               .toList();
     }
 
@@ -928,9 +933,9 @@ class _OrderTablePageState extends State<OrderTablePage> {
       filteredOrders =
           filteredOrders.where((order) {
             return (order.createdAt.isAfter(
-              start.subtract(Duration(seconds: 1)),
-            ) &&
-                order.createdAt.isBefore(end.add(Duration(seconds: 1)))) ||
+                      start.subtract(Duration(seconds: 1)),
+                    ) &&
+                    order.createdAt.isBefore(end.add(Duration(seconds: 1)))) ||
                 (order.completedAt != null &&
                     order.completedAt!.isAfter(
                       start.subtract(Duration(seconds: 1)),
@@ -987,10 +992,12 @@ class _OrderTablePageState extends State<OrderTablePage> {
               serviceAmount: order.serviceAmount,
               finalTotal: order.finalTotal,
               status: order.status,
-              receiptPrinted: printed || order.receiptPrinted, // ✅ doim tekshiramiz
+              receiptPrinted:
+                  printed || order.receiptPrinted, // ✅ doim tekshiramiz
               createdAt: order.createdAt,
               completedAt: order.completedAt,
-              items: order.items, percentage: order.percentage,
+              items: order.items,
+              percentage: order.percentage,
             ),
           );
         }
@@ -1000,7 +1007,6 @@ class _OrderTablePageState extends State<OrderTablePage> {
           allOrders = updatedOrders;
           filteredOrders = updatedOrders;
         });
-
       } else {
         setState(() {
           isLoading = false;
@@ -1022,9 +1028,9 @@ class _OrderTablePageState extends State<OrderTablePage> {
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(Duration(days: 30)),
       initialDateRange:
-      startDate != null && endDate != null
-          ? DateTimeRange(start: startDate!, end: endDate!)
-          : null,
+          startDate != null && endDate != null
+              ? DateTimeRange(start: startDate!, end: endDate!)
+              : null,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -1071,7 +1077,6 @@ class _OrderTablePageState extends State<OrderTablePage> {
     return printedOrders.contains(orderId);
   }
 
-
   Future<void> _printOrder(OrderModel order, int index) async {
     try {
       // Loading dialog
@@ -1080,20 +1085,20 @@ class _OrderTablePageState extends State<OrderTablePage> {
         barrierDismissible: false,
         builder:
             (context) => AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: Color(0xFF0d5720)),
-              SizedBox(height: 20),
-              Text('🖨️ Chek chop etilmoqda...'),
-              SizedBox(height: 10),
-              Text(
-                'Buyurtma: ${order.orderNumber}',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF0d5720)),
+                  SizedBox(height: 20),
+                  Text('🖨️ Chek chop etilmoqda...'),
+                  SizedBox(height: 10),
+                  Text(
+                    'Buyurtma: ${order.orderNumber}',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
       );
 
       print("🖨️ ${order.orderNumber} chop etish boshlandi");
@@ -1121,7 +1126,8 @@ class _OrderTablePageState extends State<OrderTablePage> {
             receiptPrinted: true, // ❗ doim true
             createdAt: order.createdAt,
             completedAt: order.completedAt,
-            items: order.items, percentage: order.percentage,
+            items: order.items,
+            percentage: order.percentage,
           );
         });
 
@@ -1171,11 +1177,11 @@ class _OrderTablePageState extends State<OrderTablePage> {
     // Hisoblarni hisoblash
     final totalService = filteredOrders.fold<double>(
       0,
-          (sum, order) => sum + order.serviceAmount,
+      (sum, order) => sum + order.serviceAmount,
     );
     final totalAmount = filteredOrders.fold<double>(
       0,
-          (sum, order) => sum + order.finalTotal,
+      (sum, order) => sum + order.finalTotal,
     );
     final printedCount =
         filteredOrders.where((order) => order.receiptPrinted).length;
@@ -1232,9 +1238,9 @@ class _OrderTablePageState extends State<OrderTablePage> {
                 MaterialPageRoute(
                   builder:
                       (context) => OrderTablePage1(
-                    waiterName: widget.waiterName,
-                    token: widget.token,
-                  ),
+                        waiterName: widget.waiterName,
+                        token: widget.token,
+                      ),
                 ),
               );
             },
@@ -1338,44 +1344,44 @@ class _OrderTablePageState extends State<OrderTablePage> {
           // Jadval - Ekranning qolgan qismini to'liq egallaydi
           Expanded(
             child:
-            isLoading
-                ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF0d5720)),
-                  SizedBox(height: 16),
-                  Text('Ma\'lumotlar yuklanmoqda...'),
-                ],
-              ),
-            )
-                : filteredOrders.isEmpty
-                ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.receipt_long,
-                    size: 64,
-                    color: Colors.grey,
-                  ),
-                  SizedBox(height: 16),
-                  Text(
-                    'Ma\'lumotlar topilmadi',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Boshqa sana tanlashga harakat qiling',
-                    style: TextStyle(color: Colors.grey[500]),
-                  ),
-                ],
-              ),
-            )
-                : _buildOrdersTable(),
+                isLoading
+                    ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(color: Color(0xFF0d5720)),
+                          SizedBox(height: 16),
+                          Text('Ma\'lumotlar yuklanmoqda...'),
+                        ],
+                      ),
+                    )
+                    : filteredOrders.isEmpty
+                    ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.receipt_long,
+                            size: 64,
+                            color: Colors.grey,
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            'Ma\'lumotlar topilmadi',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Boshqa sana tanlashga harakat qiling',
+                            style: TextStyle(color: Colors.grey[500]),
+                          ),
+                        ],
+                      ),
+                    )
+                    : _buildOrdersTable(),
           ),
         ],
       ),
@@ -1383,11 +1389,11 @@ class _OrderTablePageState extends State<OrderTablePage> {
   }
 
   Widget _buildStatCard(
-      String title,
-      String value,
-      IconData icon,
-      Color color,
-      ) {
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1469,17 +1475,17 @@ class _OrderTablePageState extends State<OrderTablePage> {
                 child: Table(
                   columnWidths: _getColumnWidths(),
                   children: List<TableRow>.generate(filteredOrders.length, (
-                      index,
-                      ) {
+                    index,
+                  ) {
                     final order = filteredOrders[index];
                     return TableRow(
                       decoration: BoxDecoration(
                         color:
-                        order.receiptPrinted
-                            ? Colors.green.withOpacity(0.05)
-                            : (index % 2 == 0
-                            ? Colors.grey.withOpacity(0.02)
-                            : Colors.white),
+                            order.receiptPrinted
+                                ? Colors.green.withOpacity(0.05)
+                                : (index % 2 == 0
+                                    ? Colors.grey.withOpacity(0.02)
+                                    : Colors.white),
                         border: Border(
                           bottom: BorderSide(
                             color: Colors.grey.withOpacity(0.2),
@@ -1621,7 +1627,6 @@ class _OrderTablePageState extends State<OrderTablePage> {
     );
   }
 
-
   Widget _buildTableCell(String tableNumber) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -1689,12 +1694,12 @@ class _OrderTablePageState extends State<OrderTablePage> {
         height: 32,
         child: ElevatedButton(
           onPressed:
-          order.receiptPrinted ? null : () => _printOrder(order, index),
+              order.receiptPrinted ? null : () => _printOrder(order, index),
           style: ElevatedButton.styleFrom(
             backgroundColor:
-            order.receiptPrinted ? Colors.grey[300] : Color(0xFF0d5720),
+                order.receiptPrinted ? Colors.grey[300] : Color(0xFF0d5720),
             foregroundColor:
-            order.receiptPrinted ? Colors.grey[600] : Colors.white,
+                order.receiptPrinted ? Colors.grey[600] : Colors.white,
             padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(6),

@@ -12,8 +12,9 @@ import 'package:flutter/services.dart'
     show rootBundle; // Faqat rootBundle import qilish
 import 'package:ffi/ffi.dart';
 import 'package:image/image.dart' as img;
+import 'package:sora/data/user_datas.dart';
 import 'package:win32/win32.dart';
-import 'package:sora/Global/Api_global.dart';
+
 import 'package:top_snackbar_flutter/top_snack_bar.dart';
 import '../../Offisant/Page/Users_page.dart';
 import '../Model/KassirModel.dart';
@@ -451,7 +452,6 @@ class _FastUnifiedPendingPaymentsPageState
     });
   }
 
-  static const String baseUrl = ApiConfig.baseUrl;
   static String? _token;
   static final Map<String, CachedData> _cache = {};
   static DateTime _lastFetch = DateTime(2000);
@@ -476,6 +476,7 @@ class _FastUnifiedPendingPaymentsPageState
         'closed': _cache['closed']!.data,
       };
     }
+    final api = await UserDatas().getApi();
 
     try {
       // Widget orqali uzatilgan token ishlatish
@@ -484,14 +485,14 @@ class _FastUnifiedPendingPaymentsPageState
       // PARALLEL API CALLS - 2 ta API ni bir vaqtda
       final results = await Future.wait([
         http.get(
-          Uri.parse('$baseUrl/orders/my-pending'),
+          Uri.parse('$api/orders/my-pending'),
           headers: {
             'Authorization': 'Bearer $kassirToken',
             'Content-Type': 'application/json',
           },
         ),
         http.get(
-          Uri.parse('$baseUrl/orders/pending-payments'),
+          Uri.parse('$api/orders/pending-payments'),
           headers: {
             'Authorization': 'Bearer $kassirToken',
             'Content-Type': 'application/json',
@@ -557,10 +558,12 @@ class _FastUnifiedPendingPaymentsPageState
     String orderId,
     List<Map<String, dynamic>> items,
   ) async {
+    final api = await UserDatas().getApi();
+
     try {
       final response = await http
           .put(
-            Uri.parse('$baseUrl/orders/close/$orderId'),
+            Uri.parse('$api/orders/close/$orderId'),
             headers: {
               'Authorization': 'Bearer ${widget.token}',
               'Content-Type': 'application/json',
@@ -605,11 +608,12 @@ class _FastUnifiedPendingPaymentsPageState
     if (widget.token == null) {
       return {'success': false, 'message': 'Token topilmadi'};
     }
+    final api = await UserDatas().getApi();
 
     try {
       final response = await http
           .post(
-            Uri.parse('$baseUrl/kassir/payment/$orderId'),
+            Uri.parse('$api/kassir/payment/$orderId'),
             headers: {
               'Authorization': 'Bearer ${widget.token}',
               'Content-Type': 'application/json',
@@ -652,10 +656,12 @@ class _FastUnifiedPendingPaymentsPageState
     required String reason,
     required String notes,
   }) async {
+    final api = await UserDatas().getApi();
+
     try {
       final response = await http
           .post(
-            Uri.parse('$baseUrl/orders/$orderId/cancel-item'),
+            Uri.parse('$api/orders/$orderId/cancel-item'),
             headers: {
               'Authorization': 'Bearer ${widget.token}',
               'Content-Type': 'application/json',

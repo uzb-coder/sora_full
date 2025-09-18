@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sora/Global/Api_global.dart';
+
 import 'package:sora/data/user_datas.dart';
 import 'dart:async';
 import '../../Admin/Page/Home_page.dart';
@@ -63,8 +63,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  static const String baseUrl = ApiConfig.baseUrl;
-
   String? _errorMessage;
 
   // Tokenni SharedPreferences ga saqlash
@@ -95,8 +93,10 @@ class _LoginScreenState extends State<LoginScreen> {
     String pin,
     String role,
   ) async {
+    final api = await UserDatas().getApi();
+
     try {
-      final loginUrl = Uri.parse('$baseUrl/auth/login');
+      final loginUrl = Uri.parse('$api/auth/login');
       final res = await http.post(
         loginUrl,
         headers: {'Content-Type': 'application/json'},
