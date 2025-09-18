@@ -172,6 +172,11 @@ class _PosScreenState extends State<PosScreen> {
   List<Category> _categories = [];
   bool _isLoadingProducts = false;
 
+// _State ichiga qo‘shing
+bool _isRefreshing = false;
+DateTime? _lastRefresh;
+
+
   @override
   void initState() {
     super.initState();
@@ -249,6 +254,31 @@ class _PosScreenState extends State<PosScreen> {
       }
     }
   }
+
+  Future<void> _refreshPage() async {
+  if (_isRefreshing) return;
+  setState(() => _isRefreshing = true);
+
+  try {
+    // Keshlarni tozalab, barcha ma’lumotlarni qayta yuklaymiz
+    _ordersCache.clear();
+    await _loadInitialTables();          // stollar
+    await _checkTableStatuses();         // stol holatlari
+    await _loadProductsAndCategories();  // mahsulotlar va kategoriyalar (ixtiyoriy, lekin foydali)
+    _lastRefresh = DateTime.now();
+
+    if (mounted) {
+      showCenterSnackBar(context, "Sahifa yangilandi ✅", color: Colors.green);
+    }
+  } catch (e) {
+    if (mounted) {
+      showCenterSnackBar(context, "Yangilashda xatolik: $e", color: Colors.red);
+    }
+  } finally {
+    if (mounted) setState(() => _isRefreshing = false);
+  }
+}
+
 
   Future<void> _moveOrderToTable(String orderId, String newTableId) async {
     final api = await UserDatas().getApi();
@@ -1416,30 +1446,65 @@ class _PosScreenState extends State<PosScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-              ),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.table_restaurant, color: AppColors.white, size: 24),
-                SizedBox(width: 12),
-                Text(
-                  'Stollar',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.white,
+         Container(
+  padding: const EdgeInsets.all(20),
+  decoration: const BoxDecoration(
+    color: AppColors.primary,
+    borderRadius: BorderRadius.only(
+      topLeft: Radius.circular(16),
+      topRight: Radius.circular(16),
+    ),
+  ),
+  child: Row(
+    children: [
+      const Icon(Icons.table_restaurant, color: AppColors.white, size: 24),
+      const SizedBox(width: 12),
+      const Text(
+        'Stollar',
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: AppColors.white,
+        ),
+      ),
+      const Spacer(),
+      if (_lastRefresh != null) ...[
+      
+        const SizedBox(width: 12),
+      ],
+      SizedBox(
+        height: 36,
+        child: ElevatedButton.icon(
+          onPressed: _isRefreshing ? null : _refreshPage,
+          icon: _isRefreshing
+              ? const SizedBox(
+                  width: 16, height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2, color: AppColors.white,
                   ),
-                ),
-              ],
+                )
+              : const Icon(Icons.refresh, size: 18, color: AppColors.white),
+          label: Text(
+            _isRefreshing ? "Yangilanmoqda..." : "Yangilash",
+            style: const TextStyle(
+              color: AppColors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
             ),
           ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.black.withOpacity(0.15),
+            foregroundColor: AppColors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            elevation: 0,
+          ),
+        ),
+      ),
+    ],
+  ),
+),
+
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(20),

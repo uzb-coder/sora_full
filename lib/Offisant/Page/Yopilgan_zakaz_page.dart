@@ -164,7 +164,6 @@ class ApiResponse<T> {
   ApiResponse({required this.success, this.data, required this.message});
 }
 
-// AuthServices
 class AuthServices {
   static const String userCode = "2004";
   static const String password = "2004";
