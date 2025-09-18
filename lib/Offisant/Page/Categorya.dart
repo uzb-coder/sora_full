@@ -759,7 +759,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       final socket = await Socket.connect(
         ip,
         9100,
-        timeout: Duration(milliseconds: 500),
+        timeout: Duration(seconds: 1),
       );
       socket.add(data);
       await socket.flush();

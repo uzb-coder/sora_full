@@ -90,8 +90,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
         children: [
           Center(
             child: Container(
-              width: logoSize > 350 ? 350 : logoSize, // maksimal 350 px
-              height: logoSize > 350 ? 350 : logoSize,
+              width: logoSize > 350 ? 300 : logoSize, // maksimal 350 px
+              height: logoSize > 350 ? 300 : logoSize,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
 
@@ -114,7 +114,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               ),
             ),
           ),
-          SizedBox(height: screenHeight * 0.05),
+          SizedBox(height: screenHeight * 0.01),
 
           Text(
             _timeString,
@@ -126,7 +126,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               letterSpacing: 4,
             ),
           ),
-          SizedBox(height: screenHeight * 0.012),
 
           Text(
             _dateString,
@@ -136,7 +135,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               color: Colors.black54,
             ),
           ),
-          SizedBox(height: screenHeight * 0.07),
+          SizedBox(height: screenHeight * 0.02),
 
           Center(
             child: ElevatedButton(

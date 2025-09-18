@@ -715,7 +715,7 @@ class _OrderTablePageState extends State<OrderTablePage> {
       }
     }
     final api = await UserDatas().getApi();
-
+    final tokenim = await UserDatas().getToken();
     // Serverdan ma'lumot olish
     final url = Uri.parse('$api/orders/pending-payments');
 
@@ -723,7 +723,7 @@ class _OrderTablePageState extends State<OrderTablePage> {
       final response = await http.get(
         url,
         headers: {
-          'Authorization': 'Bearer ${widget.token}',
+          'Authorization': 'Bearer $tokenim',
           'Content-Type': 'application/json',
         },
       );
@@ -1014,7 +1014,9 @@ class _OrderTablePageState extends State<OrderTablePage> {
         });
       }
     } catch (e) {
-      setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('❌ Xatolik: $e'), backgroundColor: Colors.red),
       );
@@ -1236,10 +1238,8 @@ class _OrderTablePageState extends State<OrderTablePage> {
                 context,
                 MaterialPageRoute(
                   builder:
-                      (context) => OrderTablePage1(
-                        waiterName: widget.waiterName,
-                        token: widget.token,
-                      ),
+                      (context) =>
+                          OrderTablePage1(waiterName: widget.waiterName),
                 ),
               );
             },

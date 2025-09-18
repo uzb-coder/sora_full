@@ -17,7 +17,7 @@ class UserDatas {
 
   void saveToken(String token) async {
     SharedPreferences value = await _loginda;
-    value.setString("token", token);
+    value.setString("tokenim", token);
   }
 
   void saveApi(String api) async {
@@ -32,8 +32,8 @@ class UserDatas {
 
   Future<String> getToken() async {
     SharedPreferences value = await _loginda;
-    if (value.containsKey('token')) {
-      String data = value.getString("token")!;
+    if (value.containsKey('tokenim')) {
+      String data = value.getString("tokenim")!;
       _token = data;
 
       return data;

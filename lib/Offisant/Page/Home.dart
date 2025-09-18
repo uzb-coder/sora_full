@@ -331,7 +331,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   void _startRealTimeUpdates() {
-    _realTimeTimer = Timer.periodic(const Duration(milliseconds: 800), (timer) {
+    _realTimeTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
       _checkTableStatusesRealTime();
       if (_selectedTableId != null) {
         _fetchOrdersForTableSilently(_selectedTableId!);
@@ -725,7 +725,7 @@ class _PosScreenState extends State<PosScreen> {
       );
       socket.add(data);
       await socket.flush();
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(seconds: 1));
       socket.destroy();
       debugPrint('$ip ga muvaffaqiyatli yuborildi');
     } catch (e) {

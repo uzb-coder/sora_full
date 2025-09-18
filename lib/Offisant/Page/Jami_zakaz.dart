@@ -551,9 +551,8 @@ class UsbPrinterService {
 
 class OrderTablePage1 extends StatefulWidget {
   final String waiterName;
-  final String token;
 
-  const OrderTablePage1({required this.waiterName, required this.token});
+  const OrderTablePage1({required this.waiterName});
 
   @override
   _OrderTablePageState createState() => _OrderTablePageState();
@@ -617,15 +616,15 @@ class _OrderTablePageState extends State<OrderTablePage1> {
   Future<void> fetchZakaz({bool forceRefresh = false}) async {
     setState(() => isLoading = true);
     final api = await UserDatas().getApi();
-
+    final token = await UserDatas().getToken();
     try {
       var url = Uri.parse("$api/orders/completed");
-
+      print(token);
       var res = await http.get(
         url,
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer ${widget.token}",
+          "Authorization": "Bearer $token",
         },
       );
 
@@ -645,6 +644,7 @@ class _OrderTablePageState extends State<OrderTablePage1> {
         });
       }
     } catch (e) {
+      if (mounted) {}
       setState(() {
         responseText = "Xatolik: $e";
       });
@@ -733,7 +733,7 @@ class _OrderTablePageState extends State<OrderTablePage1> {
             ),
             SizedBox(height: 2),
             Text(
-              "${displayDate} xizmat haqi: ${_formatNumber(totalService)} so'm",
+              "$displayDate xizmat haqi: ${_formatNumber(totalService)} so'm",
               style: TextStyle(
                 color: Colors.white.withOpacity(0.9),
                 fontSize: 14,
