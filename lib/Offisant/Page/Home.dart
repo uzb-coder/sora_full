@@ -172,10 +172,9 @@ class _PosScreenState extends State<PosScreen> {
   List<Category> _categories = [];
   bool _isLoadingProducts = false;
 
-// _State ichiga qo‘shing
-bool _isRefreshing = false;
-DateTime? _lastRefresh;
-
+  // _State ichiga qo‘shing
+  bool _isRefreshing = false;
+  DateTime? _lastRefresh;
 
   @override
   void initState() {
@@ -256,29 +255,32 @@ DateTime? _lastRefresh;
   }
 
   Future<void> _refreshPage() async {
-  if (_isRefreshing) return;
-  setState(() => _isRefreshing = true);
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
 
-  try {
-    // Keshlarni tozalab, barcha ma’lumotlarni qayta yuklaymiz
-    _ordersCache.clear();
-    await _loadInitialTables();          // stollar
-    await _checkTableStatuses();         // stol holatlari
-    await _loadProductsAndCategories();  // mahsulotlar va kategoriyalar (ixtiyoriy, lekin foydali)
-    _lastRefresh = DateTime.now();
+    try {
+      // Keshlarni tozalab, barcha ma’lumotlarni qayta yuklaymiz
+      _ordersCache.clear();
+      await _loadInitialTables(); // stollar
+      await _checkTableStatuses(); // stol holatlari
+      await _loadProductsAndCategories(); // mahsulotlar va kategoriyalar (ixtiyoriy, lekin foydali)
+      _lastRefresh = DateTime.now();
 
-    if (mounted) {
-      showCenterSnackBar(context, "Sahifa yangilandi ✅", color: Colors.green);
+      if (mounted) {
+        showCenterSnackBar(context, "Sahifa yangilandi ✅", color: Colors.green);
+      }
+    } catch (e) {
+      if (mounted) {
+        showCenterSnackBar(
+          context,
+          "Yangilashda xatolik: $e",
+          color: Colors.red,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
     }
-  } catch (e) {
-    if (mounted) {
-      showCenterSnackBar(context, "Yangilashda xatolik: $e", color: Colors.red);
-    }
-  } finally {
-    if (mounted) setState(() => _isRefreshing = false);
   }
-}
-
 
   Future<void> _moveOrderToTable(String orderId, String newTableId) async {
     final api = await UserDatas().getApi();
@@ -1263,6 +1265,7 @@ DateTime? _lastRefresh;
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = screenWidth > 1200;
     final isTablet = screenWidth >= 600 && screenWidth <= 1200;
+    final width = MediaQuery.of(context).size.width;
 
     return Scaffold(
       backgroundColor: Color(0xFFDFF3E3),
@@ -1273,14 +1276,14 @@ DateTime? _lastRefresh;
             flex: 4,
             child: Container(
               margin: const EdgeInsets.all(16),
-              child: _buildTablesGrid(isDesktop, isTablet),
+              child: _buildTablesGrid(isDesktop, isTablet, width),
             ),
           ),
           Expanded(
             flex: 3,
             child: Container(
               margin: const EdgeInsets.fromLTRB(0, 16, 16, 16),
-              child: _buildOrderDetails(),
+              child: _buildOrderDetails(isTablet, width),
             ),
           ),
         ],
@@ -1430,7 +1433,7 @@ DateTime? _lastRefresh;
     );
   }
 
-  Widget _buildTablesGrid(bool isDesktop, bool isTablet) {
+  Widget _buildTablesGrid(bool isDesktop, bool isTablet, double width) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -1446,64 +1449,74 @@ DateTime? _lastRefresh;
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-         Container(
-  padding: const EdgeInsets.all(20),
-  decoration: const BoxDecoration(
-    color: AppColors.primary,
-    borderRadius: BorderRadius.only(
-      topLeft: Radius.circular(16),
-      topRight: Radius.circular(16),
-    ),
-  ),
-  child: Row(
-    children: [
-      const Icon(Icons.table_restaurant, color: AppColors.white, size: 24),
-      const SizedBox(width: 12),
-      const Text(
-        'Stollar',
-        style: TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: AppColors.white,
-        ),
-      ),
-      const Spacer(),
-      if (_lastRefresh != null) ...[
-      
-        const SizedBox(width: 12),
-      ],
-      SizedBox(
-        height: 36,
-        child: ElevatedButton.icon(
-          onPressed: _isRefreshing ? null : _refreshPage,
-          icon: _isRefreshing
-              ? const SizedBox(
-                  width: 16, height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2, color: AppColors.white,
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.table_restaurant,
+                  color: AppColors.white,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Stollar',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.white,
                   ),
-                )
-              : const Icon(Icons.refresh, size: 18, color: AppColors.white),
-          label: Text(
-            _isRefreshing ? "Yangilanmoqda..." : "Yangilash",
-            style: const TextStyle(
-              color: AppColors.white,
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
+                ),
+                const Spacer(),
+                if (_lastRefresh != null) ...[const SizedBox(width: 12)],
+                SizedBox(
+                  height: 36,
+                  child: ElevatedButton.icon(
+                    onPressed: _isRefreshing ? null : _refreshPage,
+                    icon:
+                        _isRefreshing
+                            ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.white,
+                              ),
+                            )
+                            : const Icon(
+                              Icons.refresh,
+                              size: 18,
+                              color: AppColors.white,
+                            ),
+                    label: Text(
+                      _isRefreshing ? "Yangilanmoqda..." : "Yangilash",
+                      style: const TextStyle(
+                        color: AppColors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black.withOpacity(0.15),
+                      foregroundColor: AppColors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      elevation: 0,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.black.withOpacity(0.15),
-            foregroundColor: AppColors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            elevation: 0,
-          ),
-        ),
-      ),
-    ],
-  ),
-),
 
           Expanded(
             child: Padding(
@@ -1529,7 +1542,7 @@ DateTime? _lastRefresh;
                               200, // element maksimal eni, xohlagancha sozlang
                           mainAxisSpacing: 16,
                           crossAxisSpacing: 16,
-                          childAspectRatio: 1.1,
+                          childAspectRatio: .9,
                         ),
                         itemCount: _tables.length,
                         itemBuilder: (_, index) {
@@ -1554,6 +1567,8 @@ DateTime? _lastRefresh;
                               isSelected,
                               isOccupied,
                               isOwnTable,
+                              width,
+                              isTablet,
                             ),
                           );
                         },
@@ -1570,6 +1585,8 @@ DateTime? _lastRefresh;
     bool isSelected,
     bool isOccupied,
     bool isOwnTable,
+    double width,
+    bool isTablet,
   ) {
     Color cardColor;
     Color textColor;
@@ -1616,17 +1633,18 @@ DateTime? _lastRefresh;
                 color: textColor,
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.table_bar,
-                size: 28,
+                size: width * .03,
                 color: AppColors.white,
               ),
             ),
             const SizedBox(height: 12),
             Text(
-              "${table.name}",
+              table.name,
               style: TextStyle(
-                fontSize: 18,
+                fontSize: isTablet ? width * .025 : width * .01,
+
                 fontWeight: FontWeight.bold,
                 color: textColor,
               ),
@@ -1641,8 +1659,12 @@ DateTime? _lastRefresh;
               ),
               child: Text(
                 statusText,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.clip,
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: isTablet ? width * .015 : width * .01,
+
                   color: textColor,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1654,7 +1676,7 @@ DateTime? _lastRefresh;
     );
   }
 
-  Widget _buildOrderDetails() {
+  Widget _buildOrderDetails(bool isTablet, double width) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -1748,7 +1770,7 @@ DateTime? _lastRefresh;
                         final order = _selectedTableOrders[index];
                         return Container(
                           margin: const EdgeInsets.only(bottom: 12),
-                          child: _buildOrderCard(order, index),
+                          child: _buildOrderCard(order, index, isTablet, width),
                         );
                       },
                     ),
@@ -1758,7 +1780,7 @@ DateTime? _lastRefresh;
     );
   }
 
-  Widget _buildOrderCard(Order order, int index) {
+  Widget _buildOrderCard(Order order, int index, bool isTablet, double width) {
     final isOwnOrder = order.userId == widget.user.id;
 
     return Container(
@@ -1776,7 +1798,7 @@ DateTime? _lastRefresh;
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "${order.formatted_order_number}",
+                  order.formatted_order_number,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -1932,24 +1954,26 @@ DateTime? _lastRefresh;
                                   ),
                                 ),
                               )
-                              : ElevatedButton.icon(
+                              : ElevatedButton(
                                 onPressed: () => _showAddItemsDialog(order),
-                                icon: const Icon(
-                                  Icons.add_shopping_cart,
-                                  size: 18,
-                                ),
-                                label: const Text(
-                                  "Qo'shish",
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.primary,
                                   foregroundColor: AppColors.white,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+
+                                child: Center(
+                                  child: Text(
+                                    "Qo'shish",
+                                    style: TextStyle(
+                                      fontSize:
+                                          isTablet
+                                              ? width * .014
+                                              : width * .015,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1974,21 +1998,21 @@ DateTime? _lastRefresh;
                                   ),
                                 ),
                               )
-                              : ElevatedButton.icon(
+                              : ElevatedButton(
                                 onPressed: () => _closeOrder(order),
-                                icon: const Icon(Icons.check_circle, size: 18),
-                                label: const Text(
-                                  "Yopish",
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.accent,
                                   foregroundColor: AppColors.white,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                                child: Text(
+                                  "Yopish",
+                                  style: TextStyle(
+                                    fontSize:
+                                        isTablet ? width * .014 : width * .015,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ),
@@ -2000,15 +2024,23 @@ DateTime? _lastRefresh;
                   Expanded(
                     child: SizedBox(
                       height: 44,
-                      child: ElevatedButton.icon(
+                      child: ElevatedButton(
                         onPressed: () => _showMoveTableDialog(order),
-                        icon: const Icon(Icons.swap_horiz, size: 18),
-                        label: const Text("Ko'chirish"),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.orange,
                           foregroundColor: AppColors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+
+                        child: Text(
+                          "Ko'chirish",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: isTablet ? width * .0135 : width * .015,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ),
