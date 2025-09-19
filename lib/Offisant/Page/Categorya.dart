@@ -836,7 +836,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = screenWidth > 1200;
     final isTablet = screenWidth >= 600 && screenWidth <= 1200;
-
+    final width = MediaQuery.of(context).size.width;
     final selectedCategory =
         _categories.cast<Category?>().firstWhere(
           (cat) => cat?.id == _selectedCategoryId,
@@ -872,6 +872,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                       isDesktop,
                       isTablet,
                       selectedCategory,
+                      width,
                     ),
                   ),
                 ],
@@ -1103,6 +1104,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     bool isDesktop,
     bool isTablet,
     Category selectedCategory,
+    double width,
   ) {
     // Local helper: normalize
     String n(String? s) => (s ?? '').trim().toLowerCase();
@@ -1224,13 +1226,14 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                       )
                       : GridView.builder(
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: isDesktop ? 5 : (isTablet ? 2 : 3),
-                          childAspectRatio: 1.1,
+                          crossAxisCount: isDesktop ? 5 : (width < 650 ? 2 : 3),
+                          childAspectRatio: width < 650 ? 1.1 : 2,
                           crossAxisSpacing: 8,
                           mainAxisSpacing: 8,
                         ),
                         itemCount: _filteredProducts.length,
                         itemBuilder: (context, index) {
+                          print(width);
                           final product = _filteredProducts[index];
                           return _buildProductCard(product, isDesktop);
                         },
