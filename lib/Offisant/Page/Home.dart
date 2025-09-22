@@ -61,9 +61,9 @@ class Order {
       userId: json['user_id'] ?? '',
       firstName: json['waiter_name'] ?? json['first_name'] ?? '',
       items:
-      (json['items'] as List?)
-          ?.map((item) => OrderItem.fromJson(item))
-          .toList() ??
+          (json['items'] as List?)
+              ?.map((item) => OrderItem.fromJson(item))
+              .toList() ??
           [],
       totalPrice: (json['total_price'] ?? 0).toDouble(),
       status: json['status'] ?? '',
@@ -93,9 +93,9 @@ class OrderItem {
       quantity: json['quantity'] ?? 0,
       name: json['name'],
       price:
-      json['price'] != null
-          ? (json['price'] as num).toDouble()
-          : null, // int/double ikkalasini qamrab oladi
+          json['price'] != null
+              ? (json['price'] as num).toDouble()
+              : null, // int/double ikkalasini qamrab oladi
       categoryName: json['category_name'],
     );
   }
@@ -132,7 +132,6 @@ class Category {
       printerId = printer['_id']?.toString() ?? '';
       printerName = printer['name']?.toString() ?? '';
       printerIp = printer['ip']?.toString() ?? '';
-
     }
 
     return Category(
@@ -141,13 +140,15 @@ class Category {
       printerId: printerId,
       printerName: printerName,
       printerIp: printerIp,
-      subcategories: (json['subcategories'] is List)
-          ? (json['subcategories'] as List)
-          .map((e) => e['title']?.toString() ?? '')
-          .toList()
-          : [],
+      subcategories:
+          (json['subcategories'] is List)
+              ? (json['subcategories'] as List)
+                  .map((e) => e['title']?.toString() ?? '')
+                  .toList()
+              : [],
     );
-  }}
+  }
+}
 
 // ===== MODEL =====
 class TableModel {
@@ -188,9 +189,9 @@ class HallModel {
       id: json['_id'] ?? '',
       name: json['name'] ?? '',
       tables:
-      (json['tables'] as List<dynamic>? ?? [])
-          .map((t) => TableModel.fromJson(t))
-          .toList(),
+          (json['tables'] as List<dynamic>? ?? [])
+              .map((t) => TableModel.fromJson(t))
+              .toList(),
     );
   }
 }
@@ -241,7 +242,10 @@ class HallController {
 
   // 🔹 Hallni yangilash
   static Future<void> updateHall(
-      String token, String hallId, String newName) async {
+    String token,
+    String hallId,
+    String newName,
+  ) async {
     final url = await baseUrl;
     final response = await http.put(
       Uri.parse("$url/halls/update/$hallId"),
@@ -279,7 +283,11 @@ class HallController {
 
   // 🔹 Stol qo'shish
   static Future<void> addTableToHall(
-      String token, String hallId, String name, int capacity) async {
+    String token,
+    String hallId,
+    String name,
+    int capacity,
+  ) async {
     final url = await baseUrl;
     final response = await http.post(
       Uri.parse("$url/tables/create"),
@@ -304,7 +312,11 @@ class HallController {
 
   // 🔹 Stolni yangilash
   static Future<void> updateTable(
-      String token, String tableId, String newName, int newCapacity) async {
+    String token,
+    String tableId,
+    String newName,
+    int newCapacity,
+  ) async {
     final url = await baseUrl;
     final response = await http.put(
       Uri.parse("$url/tables/update/$tableId"),
@@ -370,13 +382,13 @@ class _PosScreenState extends State<PosScreen> {
   List<Category> _categories = [];
   bool _isLoadingProducts = false;
 
-  @override  void initState() {
+  @override
+  void initState() {
     super.initState();
     _initializeToken();
     _startRealTimeUpdates();
     _loadProductsAndCategories();
   }
-
 
   @override
   void dispose() {
@@ -407,7 +419,7 @@ class _PosScreenState extends State<PosScreen> {
   Future<List<HallModel>> fetchHalls() async {
     final api = await UserDatas().getApi();
 
-    final url = Uri.parse("${api}/halls/list");
+    final url = Uri.parse("$api/halls/list");
     final response = await http.get(
       url,
       headers: {
@@ -427,7 +439,7 @@ class _PosScreenState extends State<PosScreen> {
   List<TableModel> _getSelectedHallTables() {
     if (_selectedHallId == null) return [];
     final selectedHall = _halls.firstWhere(
-          (hall) => hall.id == _selectedHallId,
+      (hall) => hall.id == _selectedHallId,
       orElse: () => HallModel(id: '', name: '', tables: []),
     );
     return selectedHall.tables;
@@ -443,12 +455,12 @@ class _PosScreenState extends State<PosScreen> {
 
       final response = await http
           .get(
-        Uri.parse("${api}/orders/table/$tableId"),
-        headers: {
-          'Authorization': 'Bearer ${widget.token}',
-          'Content-Type': 'application/json',
-        },
-      )
+            Uri.parse("$api/orders/table/$tableId"),
+            headers: {
+              'Authorization': 'Bearer ${widget.token}',
+              'Content-Type': 'application/json',
+            },
+          )
           .timeout(const Duration(seconds: 10)); // Timeout oshirildi
 
       if (response.statusCode == 200) {
@@ -457,10 +469,10 @@ class _PosScreenState extends State<PosScreen> {
 
         // Faqat pending holatidagi zakazlarni olish
         final orders =
-        data
-            .map((json) => Order.fromJson(json))
-            .where((order) => order.status == 'pending')
-            .toList();
+            data
+                .map((json) => Order.fromJson(json))
+                .where((order) => order.status == 'pending')
+                .toList();
 
         // Zakazlarni id bo'yicha sort qilish (tartibni mustahkamlash uchun)
         orders.sort((a, b) => a.id.compareTo(b.id));
@@ -524,10 +536,13 @@ class _PosScreenState extends State<PosScreen> {
         );
       }
     } catch (e) {
-      showCenterSnackBar(context, "Ko'chirishda xatolik: $e", color: Colors.red);
+      showCenterSnackBar(
+        context,
+        "Ko'chirishda xatolik: $e",
+        color: Colors.red,
+      );
     }
   }
-
 
   void _handleTableTap(String tableName, String tableId) {
     print("🖱️ Stol tanlandi: $tableName (ID: $tableId)");
@@ -563,18 +578,18 @@ class _PosScreenState extends State<PosScreen> {
         try {
           final response = await http
               .get(
-            Uri.parse('${api}/orders/table/${table.id}'),
-            headers: {
-              'Authorization': 'Bearer ${widget.token}',
-              'Content-Type': 'application/json',
-            },
-          )
+                Uri.parse('$api/orders/table/${table.id}'),
+                headers: {
+                  'Authorization': 'Bearer ${widget.token}',
+                  'Content-Type': 'application/json',
+                },
+              )
               .timeout(const Duration(seconds: 2));
 
           if (response.statusCode == 200) {
             final List<dynamic> orders = jsonDecode(response.body);
             final pendingOrders =
-            orders.where((o) => o['status'] == 'pending').toList();
+                orders.where((o) => o['status'] == 'pending').toList();
 
             newStatus[table.id] = pendingOrders.isNotEmpty;
             if (pendingOrders.isNotEmpty) {
@@ -589,10 +604,10 @@ class _PosScreenState extends State<PosScreen> {
             // Cache faqat tanlangan stol bo'lmasa yangilanadi
             if (_selectedTableId != table.id) {
               final orderObjects =
-              orders
-                  .map((json) => Order.fromJson(json))
-                  .where((order) => order.status == 'pending')
-                  .toList();
+                  orders
+                      .map((json) => Order.fromJson(json))
+                      .where((order) => order.status == 'pending')
+                      .toList();
 
               // Zakazlarni sort qilish
               orderObjects.sort((a, b) => a.id.compareTo(b.id));
@@ -645,20 +660,21 @@ class _PosScreenState extends State<PosScreen> {
     try {
       final response = await http
           .get(
-        Uri.parse("${api}/orders/table/$tableId"),
-        headers: {
-          'Authorization': 'Bearer ${widget.token}',
-          'Content-Type': 'application/json',
-        },
-      )
+            Uri.parse("$api/orders/table/$tableId"),
+            headers: {
+              'Authorization': 'Bearer ${widget.token}',
+              'Content-Type': 'application/json',
+            },
+          )
           .timeout(const Duration(seconds: 3));
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
-        final orders = data
-            .map((json) => Order.fromJson(json))
-            .where((order) => order.status == 'pending')
-            .toList();
+        final orders =
+            data
+                .map((json) => Order.fromJson(json))
+                .where((order) => order.status == 'pending')
+                .toList();
 
         orders.sort((a, b) => a.id.compareTo(b.id));
 
@@ -674,7 +690,6 @@ class _PosScreenState extends State<PosScreen> {
       print("❌ Silent fetch error: $e");
     }
   }
-
 
   void _clearCacheAndRefresh() {
     if (_selectedTableId != null) {
@@ -704,9 +719,9 @@ class _PosScreenState extends State<PosScreen> {
     }
 
     String? formattedOrderNumber =
-    _selectedTableOrders.isNotEmpty
-        ? _selectedTableOrders.first.formatted_order_number
-        : '';
+        _selectedTableOrders.isNotEmpty
+            ? _selectedTableOrders.first.formatted_order_number
+            : '';
 
     showDialog(
       context: context,
@@ -785,18 +800,18 @@ class _PosScreenState extends State<PosScreen> {
         try {
           final response = await http
               .get(
-            Uri.parse('${api}/orders/table/${table.id}'),
-            headers: {
-              'Authorization': 'Bearer ${widget.token}',
-              'Content-Type': 'application/json',
-            },
-          )
+                Uri.parse('$api/orders/table/${table.id}'),
+                headers: {
+                  'Authorization': 'Bearer ${widget.token}',
+                  'Content-Type': 'application/json',
+                },
+              )
               .timeout(const Duration(seconds: 5));
 
           if (response.statusCode == 200) {
             final List<dynamic> orders = jsonDecode(response.body);
             final pendingOrders =
-            orders.where((o) => o['status'] == 'pending').toList();
+                orders.where((o) => o['status'] == 'pending').toList();
 
             newStatus[table.id] = pendingOrders.isNotEmpty;
             if (pendingOrders.isNotEmpty) {
@@ -806,10 +821,10 @@ class _PosScreenState extends State<PosScreen> {
             // Cache yangilanishi faqat tanlangan stol bo'lmasa
             if (_selectedTableId != table.id) {
               final orderObjects =
-              orders
-                  .map((json) => Order.fromJson(json))
-                  .where((order) => order.status == 'pending')
-                  .toList();
+                  orders
+                      .map((json) => Order.fromJson(json))
+                      .where((order) => order.status == 'pending')
+                      .toList();
 
               // Sort qilish
               orderObjects.sort((a, b) => a.id.compareTo(b.id));
@@ -849,7 +864,7 @@ class _PosScreenState extends State<PosScreen> {
     try {
       // ✅ Mahsulotlarni olish
       Future<List<Ovqat>> fetchProducts() async {
-        final url = Uri.parse("${api}/foods/list"); // <-- yo‘lni tekshiring
+        final url = Uri.parse("$api/foods/list"); // <-- yo‘lni tekshiring
 
         final response = await http.get(
           url,
@@ -867,12 +882,14 @@ class _PosScreenState extends State<PosScreen> {
           }
           throw Exception("API javobida mahsulotlar ro'yxati topilmadi");
         } else {
-          throw Exception("Mahsulotlar olishda xatolik: ${response.statusCode}");
+          throw Exception(
+            "Mahsulotlar olishda xatolik: ${response.statusCode}",
+          );
         }
       }
 
       Future<List<Category>> fetchCategories() async {
-        final url = Uri.parse("${api}/categories/list");
+        final url = Uri.parse("$api/categories/list");
 
         final response = await http.get(
           url,
@@ -896,9 +913,10 @@ class _PosScreenState extends State<PosScreen> {
               return [];
             }
 
-            final categories = categoriesList.map((json) {
-              return Category.fromJson(json);
-            }).toList();
+            final categories =
+                categoriesList.map((json) {
+                  return Category.fromJson(json);
+                }).toList();
 
             return categories;
           } catch (e) {
@@ -908,10 +926,8 @@ class _PosScreenState extends State<PosScreen> {
           return [];
         }
       }
-      final results = await Future.wait([
-        fetchCategories(),
-        fetchProducts(),
-      ]);
+
+      final results = await Future.wait([fetchCategories(), fetchProducts()]);
 
       if (mounted) {
         setState(() {
@@ -921,9 +937,7 @@ class _PosScreenState extends State<PosScreen> {
         });
       }
 
-      for (var c in _categories) {
-      }
-
+      for (var c in _categories) {}
     } catch (e) {
       if (mounted) setState(() => _isLoadingProducts = false);
     }
@@ -952,41 +966,42 @@ class _PosScreenState extends State<PosScreen> {
 
   // Bekor qilingan mahsulotni printerga yuborish
   Future<void> _printCancelledItem(
-      OrderItem item,
-      int cancelQuantity,
-      String reason,
-      Order order,
-      ) async {
+    OrderItem item,
+    int cancelQuantity,
+    String reason,
+    Order order,
+  ) async {
     try {
       debugPrint('🖨️ Bekor qilingan mahsulot print qilinmoqda');
       debugPrint("🟢 Categories IDs: ${_categories.map((c) => c.id).toList()}");
 
       // Mahsulotning kategoriyasini topish
       final product = _allProducts.firstWhere(
-            (p) => p.id == item.foodId,
-        orElse: () => Ovqat(
-          id: '',
-          name: 'Noma\'lum',
-          price: 0,
-          categoryId: '',
-          subcategory: null,
-          categoryName: '',
-          subcategories: [],
-        ),
+        (p) => p.id == item.foodId,
+        orElse:
+            () => Ovqat(
+              id: '',
+              name: 'Noma\'lum',
+              price: 0,
+              categoryId: '',
+              subcategory: null,
+              categoryName: '',
+              subcategories: [],
+            ),
       );
 
       final category = _categories.firstWhere(
-            (cat) => cat.id == product.categoryId,
-        orElse: () => Category(
-          id: '',
-          title: '',
-          printerId: '',
-          printerName: '',
-          printerIp: '',
-          subcategories: [],
-        ),
+        (cat) => cat.id == product.categoryId,
+        orElse:
+            () => Category(
+              id: '',
+              title: '',
+              printerId: '',
+              printerName: '',
+              printerIp: '',
+              subcategories: [],
+            ),
       );
-
 
       // Printer IP borligini tekshirish
       if (category.printerIp.isNotEmpty && category.printerIp != 'null') {
@@ -1005,7 +1020,9 @@ class _PosScreenState extends State<PosScreen> {
         final printBytes = _createCancelPrintData(printData);
         await _printToSocket(category.printerIp, printBytes);
 
-        debugPrint('✅ Bekor qilingan mahsulot ${category.printerIp} ga yuborildi');
+        debugPrint(
+          '✅ Bekor qilingan mahsulot ${category.printerIp} ga yuborildi',
+        );
       } else {
         debugPrint("📡 ${category.title} => printerIp: ${category.printerIp}");
         debugPrint('⚠️ Kategoriya printeri topilmadi');
@@ -1014,8 +1031,6 @@ class _PosScreenState extends State<PosScreen> {
       debugPrint('❌ Cancel print error: $e');
     }
   }
-
-
 
   bool _mapsEqual(Map<String, bool> map1, Map<String, bool> map2) {
     if (map1.length != map2.length) return false;
@@ -1035,15 +1050,16 @@ class _PosScreenState extends State<PosScreen> {
 
   Future<void> _initializeToken() async {
     try {
-      api = await UserDatas().getApi(); // <-- MUHIM: shu qatordan api endi String
+      api =
+          await UserDatas().getApi(); // <-- MUHIM: shu qatordan api endi String
       _token = await AuthService.getToken();
       if (_token == null) {
         await AuthService.loginAndPrintToken();
         _token = await AuthService.getToken();
       }
-      if (_token != null) {
-        _loadInitialHalls();
-      }
+      // if (_token != null) {
+      _loadInitialHalls();
+      // }
     } catch (e) {
       print("Token error: $e");
     }
@@ -1056,10 +1072,9 @@ class _PosScreenState extends State<PosScreen> {
     }
     return true;
   }
-  
 
   Future<bool> closeOrder(String orderId) async {
-    final String apiUrl = "${api}/orders/close/";
+    final String apiUrl = "$api/orders/close/";
     try {
       final response = await http.put(
         Uri.parse("$apiUrl$orderId"),
@@ -1081,10 +1096,10 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   void showCenterSnackBar(
-      BuildContext context,
-      String message, {
-        Color color = Colors.green,
-      }) {
+    BuildContext context,
+    String message, {
+    Color color = Colors.green,
+  }) {
     showTopSnackBar(
       Overlay.of(context),
       Material(
@@ -1128,11 +1143,11 @@ class _PosScreenState extends State<PosScreen> {
   ];
 
   Future<void> showCancelDialog(
-      String orderId,
-      String foodId,
-      int itemIndex,
-      Order order,
-      ) async {
+    String orderId,
+    String foodId,
+    int itemIndex,
+    Order order,
+  ) async {
     String reason = reasons[0]; // Default sabab
     String notes = "ixtiyor"; // API uchun izoh
     int cancelQuantity = 1; // Default miqdor
@@ -1178,12 +1193,12 @@ class _PosScreenState extends State<PosScreen> {
                     isExpanded: true,
                     value: reason,
                     items:
-                    reasons.map((String r) {
-                      return DropdownMenuItem<String>(
-                        value: r,
-                        child: Text(r),
-                      );
-                    }).toList(),
+                        reasons.map((String r) {
+                          return DropdownMenuItem<String>(
+                            value: r,
+                            child: Text(r),
+                          );
+                        }).toList(),
                     onChanged: (String? newValue) {
                       if (newValue != null) {
                         setState(() {
@@ -1262,14 +1277,14 @@ class _PosScreenState extends State<PosScreen> {
 
   // _deleteItem funksiyasini yangilash
   Future<void> _deleteItem(
-      String orderId,
-      String foodId,
-      int itemIndex,
-      String reason,
-      String notes,
-      int cancelQuantity,
-      Order order,
-      ) async {
+    String orderId,
+    String foodId,
+    int itemIndex,
+    String reason,
+    String notes,
+    int cancelQuantity,
+    Order order,
+  ) async {
     setState(() => order.isProcessing = true);
 
     final result = await cancelOrderItemFast(
@@ -1379,18 +1394,18 @@ class _PosScreenState extends State<PosScreen> {
     try {
       final response = await http
           .post(
-        Uri.parse('${api}/orders/$orderId/cancel-item'),
-        headers: {
-          'Authorization': 'Bearer ${widget.token}',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'food_id': foodId,
-          'cancel_quantity': cancelQuantity,
-          'reason': reason,
-          'notes': notes,
-        }),
-      )
+            Uri.parse('$api/orders/$orderId/cancel-item'),
+            headers: {
+              'Authorization': 'Bearer ${widget.token}',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'food_id': foodId,
+              'cancel_quantity': cancelQuantity,
+              'reason': reason,
+              'notes': notes,
+            }),
+          )
           .timeout(const Duration(seconds: 10));
 
       final data = jsonDecode(response.body);
@@ -1406,7 +1421,7 @@ class _PosScreenState extends State<PosScreen> {
       return {
         'success': false,
         'message':
-        data['message']?.toString() ?? 'Mahsulotni bekor qilishda xatolik',
+            data['message']?.toString() ?? 'Mahsulotni bekor qilishda xatolik',
       };
     } catch (e) {
       debugPrint('Mahsulotni bekor qilishda xatolik: $e');
@@ -1504,9 +1519,13 @@ class _PosScreenState extends State<PosScreen> {
                 icon: const Icon(Icons.refresh, color: AppColors.primary),
                 tooltip: "Ma'lumotlarni yangilash",
                 onPressed: () async {
-                  showCenterSnackBar(context, "⏳ Yangilanmoqda...", color: Colors.orange);
-                  await _loadInitialHalls();          // Zallar va stollar
-                  await _checkTableStatuses();        // Stol statuslari
+                  showCenterSnackBar(
+                    context,
+                    "⏳ Yangilanmoqda...",
+                    color: Colors.orange,
+                  );
+                  await _loadInitialHalls(); // Zallar va stollar
+                  await _checkTableStatuses(); // Stol statuslari
                   await _loadProductsAndCategories(); // Ovqat va kategoriya
                   showCenterSnackBar(context, "✅ Ma'lumotlar yangilandi");
                 },
@@ -1526,9 +1545,9 @@ class _PosScreenState extends State<PosScreen> {
                 },
                 icon: Icons.add_circle_outline,
                 label:
-                _selectedTableName != null
-                    ? "Yangi hisob: $_selectedTableName"
-                    : "Yangi hisob",
+                    _selectedTableName != null
+                        ? "Yangi hisob: $_selectedTableName"
+                        : "Yangi hisob",
                 isPrimary: true,
               ),
               const SizedBox(width: 12),
@@ -1539,9 +1558,9 @@ class _PosScreenState extends State<PosScreen> {
                     MaterialPageRoute(
                       builder:
                           (context) => OrderTablePage(
-                        waiterName: widget.user.firstName,
-                        token: widget.token,
-                      ),
+                            waiterName: widget.user.firstName,
+                            token: widget.token,
+                          ),
                     ),
                   );
                 },
@@ -1549,7 +1568,6 @@ class _PosScreenState extends State<PosScreen> {
                 label: "Yopilgan hisoblar",
                 isPrimary: false,
               ),
-
             ],
           ),
         ),
@@ -1647,31 +1665,32 @@ class _PosScreenState extends State<PosScreen> {
             child: Padding(
               padding: const EdgeInsets.all(8.0),
               child: Row(
-                children: _halls.map((hall) {
-                  final isSelected = _selectedHallId == hall.id;
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                    child: ElevatedButton(
-                      onPressed: () {
-                        setState(() {
-                          _selectedHallId = hall.id;
-                          _selectedTableId = null;
-                          _selectedTableName = null;
-                          _selectedTableOrders = [];
-                        });
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                        isSelected ? AppColors.primary : AppColors.grey,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                children:
+                    _halls.map((hall) {
+                      final isSelected = _selectedHallId == hall.id;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                        child: ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              _selectedHallId = hall.id;
+                              _selectedTableId = null;
+                              _selectedTableName = null;
+                              _selectedTableOrders = [];
+                            });
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                isSelected ? AppColors.primary : AppColors.grey,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: Text(hall.name),
                         ),
-                      ),
-                      child: Text(hall.name),
-                    ),
-                  );
-                }).toList(),
+                      );
+                    }).toList(),
               ),
             ),
           ),
@@ -1680,65 +1699,82 @@ class _PosScreenState extends State<PosScreen> {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(20),
-              child: _isLoadingTables
-                  ? const Center(
-                child: CircularProgressIndicator(
-                  color: AppColors.primary,
-                  strokeWidth: 3,
-                ),
-              )
-                  : _halls.isEmpty
-                  ? const Center(child: Text("Zallar topilmadi", style: TextStyle(color: AppColors.grey)))
-                  : _selectedHallId == null
-                  ? const Center(child: Text("Iltimos, zalni tanlang", style: TextStyle(color: AppColors.grey)))
-                  : _getSelectedHallTables().isEmpty
-                  ? const Center(child: Text("Bu zalda stollar yo'q", style: TextStyle(color: AppColors.grey)))
-                  : GridView.builder(
-                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 200,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  childAspectRatio: 1.1,
-                ),
-                itemCount: _getSelectedHallTables().length,
-                itemBuilder: (_, index) {
-                  final table = _getSelectedHallTables()[index];
-                  final isSelected = _selectedTableId == table.id;
-                  final isOccupied = _tableOccupiedStatus[table.id] ?? false;
-                  final isOwnTable = _tableOwners[table.id] == widget.user.id;
+              child:
+                  _isLoadingTables
+                      ? const Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.primary,
+                          strokeWidth: 3,
+                        ),
+                      )
+                      : _halls.isEmpty
+                      ? const Center(
+                        child: Text(
+                          "Zallar topilmadi",
+                          style: TextStyle(color: AppColors.grey),
+                        ),
+                      )
+                      : _selectedHallId == null
+                      ? const Center(
+                        child: Text(
+                          "Iltimos, zalni tanlang",
+                          style: TextStyle(color: AppColors.grey),
+                        ),
+                      )
+                      : _getSelectedHallTables().isEmpty
+                      ? const Center(
+                        child: Text(
+                          "Bu zalda stollar yo'q",
+                          style: TextStyle(color: AppColors.grey),
+                        ),
+                      )
+                      : GridView.builder(
+                        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 200,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
+                          childAspectRatio: 1.1,
+                        ),
+                        itemCount: _getSelectedHallTables().length,
+                        itemBuilder: (_, index) {
+                          final table = _getSelectedHallTables()[index];
+                          final isSelected = _selectedTableId == table.id;
+                          final isOccupied =
+                              _tableOccupiedStatus[table.id] ?? false;
+                          final isOwnTable =
+                              _tableOwners[table.id] == widget.user.id;
 
-                  return GestureDetector(
-                    onTap: () {
-                      if (_selectedTableId == table.id &&
-                          (!isOccupied || isOwnTable)) {
-                        _showOrderScreenDialog(table.id);
-                      } else {
-                        _handleTableTap(table.name, table.id);
-                      }
-                    },
-                    child: _buildTableCard(
-                      table,       // ✅ TableModel sifatida uzatiladi
-                      isSelected,
-                      isOccupied,
-                      isOwnTable,
-                    ),
-                  );
-                },
-              ),
+                          return GestureDetector(
+                            onTap: () {
+                              if (_selectedTableId == table.id &&
+                                  (!isOccupied || isOwnTable)) {
+                                _showOrderScreenDialog(table.id);
+                              } else {
+                                _handleTableTap(table.name, table.id);
+                              }
+                            },
+                            child: _buildTableCard(
+                              table, // ✅ TableModel sifatida uzatiladi
+                              isSelected,
+                              isOccupied,
+                              isOwnTable,
+                            ),
+                          );
+                        },
+                      ),
             ),
-          )
-
+          ),
         ],
       ),
     );
   }
 
   Widget _buildTableCard(
-      TableModel table,
-      bool isSelected,
-      bool isOccupied,
-      bool isOwnTable,
-      ) {
+    TableModel table,
+    bool isSelected,
+    bool isOccupied,
+    bool isOwnTable,
+  ) {
     Color cardColor;
     Color textColor;
     String statusText;
@@ -1770,10 +1806,7 @@ class _PosScreenState extends State<PosScreen> {
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: borderColor,
-          width: 2,
-        ),
+        border: Border.all(color: borderColor, width: 2),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1824,7 +1857,6 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
-
   Widget _buildOrderDetails() {
     return Container(
       decoration: BoxDecoration(
@@ -1869,47 +1901,60 @@ class _PosScreenState extends State<PosScreen> {
 
           // 🔽 Kontent qismi
           Expanded(
-            child: _selectedTableId == null
-                ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.point_of_sale, size: 64, color: AppColors.grey),
-                  SizedBox(height: 16),
-                  Text(
-                    "Stolni tanlang",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16, color: AppColors.grey),
-                  ),
-                ],
-              ),
-            )
-                : _selectedTableOrders.isEmpty
-                ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.receipt_long,
-                      size: 48, color: AppColors.grey),
-                  SizedBox(height: 12),
-                  Text(
-                    "Zakazlar yo'q",
-                    style: TextStyle(
-                        fontSize: 16, color: AppColors.grey),
-                  ),
-                ],
-              ),
-            )
-                : ListView.builder(
-              itemCount: _selectedTableOrders.length,
-              itemBuilder: (context, index) {
-                final order = _selectedTableOrders[index];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: _buildOrderCard(order, index),
-                );
-              },
-            ),
+            child:
+                _selectedTableId == null
+                    ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.point_of_sale,
+                            size: 64,
+                            color: AppColors.grey,
+                          ),
+                          SizedBox(height: 16),
+                          Text(
+                            "Stolni tanlang",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: AppColors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                    : _selectedTableOrders.isEmpty
+                    ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.receipt_long,
+                            size: 48,
+                            color: AppColors.grey,
+                          ),
+                          SizedBox(height: 12),
+                          Text(
+                            "Zakazlar yo'q",
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: AppColors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                    : ListView.builder(
+                      itemCount: _selectedTableOrders.length,
+                      itemBuilder: (context, index) {
+                        final order = _selectedTableOrders[index];
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: _buildOrderCard(order, index),
+                        );
+                      },
+                    ),
           ),
         ],
       ),
@@ -1982,7 +2027,7 @@ class _PosScreenState extends State<PosScreen> {
               ),
               const SizedBox(height: 8),
               ...order.items.map(
-                    (item) => Container(
+                (item) => Container(
                   margin: const EdgeInsets.only(bottom: 6),
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
@@ -2020,14 +2065,14 @@ class _PosScreenState extends State<PosScreen> {
                           size: 20,
                         ),
                         onPressed:
-                        isOwnOrder
-                            ? () => showCancelDialog(
-                          order.id,
-                          item.foodId,
-                          order.items.indexOf(item),
-                          order,
-                        )
-                            : null,
+                            isOwnOrder
+                                ? () => showCancelDialog(
+                                  order.id,
+                                  item.foodId,
+                                  order.items.indexOf(item),
+                                  order,
+                                )
+                                : null,
                       ),
                     ],
                   ),
@@ -2077,40 +2122,40 @@ class _PosScreenState extends State<PosScreen> {
                     child: SizedBox(
                       height: 44,
                       child:
-                      order.isProcessing
-                          ? Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.lightGrey,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                            strokeWidth: 2,
-                          ),
-                        ),
-                      )
-                          : ElevatedButton.icon(
-                        onPressed: () => _showAddItemsDialog(order),
-                        icon: const Icon(
-                          Icons.add_shopping_cart,
-                          size: 18,
-                        ),
-                        label: const Text(
-                          "Qo'shish",
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: AppColors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
+                          order.isProcessing
+                              ? Container(
+                                decoration: BoxDecoration(
+                                  color: AppColors.lightGrey,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: AppColors.primary,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                              : ElevatedButton.icon(
+                                onPressed: () => _showAddItemsDialog(order),
+                                icon: const Icon(
+                                  Icons.add_shopping_cart,
+                                  size: 18,
+                                ),
+                                label: const Text(
+                                  "Qo'shish",
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: AppColors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -2119,37 +2164,37 @@ class _PosScreenState extends State<PosScreen> {
                     child: SizedBox(
                       height: 44,
                       child:
-                      order.isProcessing
-                          ? Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.lightGrey,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.primary,
-                            strokeWidth: 2,
-                          ),
-                        ),
-                      )
-                          : ElevatedButton.icon(
-                        onPressed: () => _closeOrder(order),
-                        icon: const Icon(Icons.check_circle, size: 18),
-                        label: const Text(
-                          "Yopish",
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.accent,
-                          foregroundColor: AppColors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
+                          order.isProcessing
+                              ? Container(
+                                decoration: BoxDecoration(
+                                  color: AppColors.lightGrey,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: AppColors.primary,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                              : ElevatedButton.icon(
+                                onPressed: () => _closeOrder(order),
+                                icon: const Icon(Icons.check_circle, size: 18),
+                                label: const Text(
+                                  "Yopish",
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.accent,
+                                  foregroundColor: AppColors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                              ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -2209,9 +2254,10 @@ class _PosScreenState extends State<PosScreen> {
 
   Future<void> _showMoveTableDialog(Order order) async {
     // Faqat tanlangan zalning stollari ichidan bo'shlarini olish
-    final emptyTables = _getSelectedHallTables()
-        .where((t) => !(_tableOccupiedStatus[t.id] ?? false))
-        .toList();
+    final emptyTables =
+        _getSelectedHallTables()
+            .where((t) => !(_tableOccupiedStatus[t.id] ?? false))
+            .toList();
 
     if (emptyTables.isEmpty) {
       showCenterSnackBar(context, "Bo'sh stollar yo'q", color: Colors.red);
@@ -2227,12 +2273,15 @@ class _PosScreenState extends State<PosScreen> {
           title: const Text("Zakazni boshqa stolga ko'chirish"),
           content: DropdownButtonFormField<String>(
             value: selectedTableId,
-            items: emptyTables.map((table) {
-              return DropdownMenuItem(
-                value: table.id,
-                child: Text("Stol ${table.name}"), // 🔹 TableModel.name ishlatildi
-              );
-            }).toList(),
+            items:
+                emptyTables.map((table) {
+                  return DropdownMenuItem(
+                    value: table.id,
+                    child: Text(
+                      "Stol ${table.name}",
+                    ), // 🔹 TableModel.name ishlatildi
+                  );
+                }).toList(),
             onChanged: (value) {
               selectedTableId = value;
             },
@@ -2261,7 +2310,6 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
-
   // Mahsulot qo'shish dialogini ko'rsatish metodi
   void _showAddItemsDialog(Order order) {
     showDialog(
@@ -2271,7 +2319,7 @@ class _PosScreenState extends State<PosScreen> {
         return Dialog.fullscreen(
           child: OrderScreenContent(
             formatted_order_number:
-            order.formatted_order_number, // YANGI qo'shildi
+                order.formatted_order_number, // YANGI qo'shildi
             tableId: order.tableId,
             tableName: _selectedTableName,
             user: widget.user,
@@ -2297,4 +2345,3 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 }
-

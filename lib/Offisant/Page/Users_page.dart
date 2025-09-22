@@ -38,10 +38,12 @@ class _UserListPageState extends State<UserListPage> {
     debugPrint("♻️ Cache tozalandi va qayta yuklanyapti...");
     _cachedUsers = null; // cache tozalash
     final users = await UserController.getAllUsers();
-    setState(() {
-      _cachedUsers = users;
-      _usersFuture = Future.value(users);
-    });
+    if (mounted) {
+      setState(() {
+        _cachedUsers = users;
+        _usersFuture = Future.value(users);
+      });
+    }
   }
 
   @override
@@ -74,15 +76,22 @@ class _UserListPageState extends State<UserListPage> {
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
-                  child: CircularProgressIndicator(color: Color(0xFF144D37)));
+                child: CircularProgressIndicator(color: Color(0xFF144D37)),
+              );
             } else if (snapshot.hasError) {
               return Center(
-                  child: Text("Xatolik: ${snapshot.error}",
-                      style: const TextStyle(color: Colors.red)));
+                child: Text(
+                  "Xatolik: ${snapshot.error}",
+                  style: const TextStyle(color: Colors.red),
+                ),
+              );
             } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
               return const Center(
-                  child: Text("Foydalanuvchi topilmadi",
-                      style: TextStyle(color: Colors.grey)));
+                child: Text(
+                  "Foydalanuvchi topilmadi",
+                  style: TextStyle(color: Colors.grey),
+                ),
+              );
             }
 
             final users = snapshot.data!;
@@ -105,20 +114,25 @@ class _UserListPageState extends State<UserListPage> {
                         child: Card(
                           elevation: 6,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16)),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(16),
                             onTap: () {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                    builder: (context) => LoginScreen(user: user)),
+                                  builder: (context) => LoginScreen(user: user),
+                                ),
                               );
                             },
                             child: Container(
                               decoration: BoxDecoration(
                                 gradient: const LinearGradient(
-                                  colors: [Color(0xFF144D37), Color(0xFF1B5E20)],
+                                  colors: [
+                                    Color(0xFF144D37),
+                                    Color(0xFF1B5E20),
+                                  ],
                                   begin: Alignment.topLeft,
                                   end: Alignment.bottomRight,
                                 ),
@@ -130,9 +144,14 @@ class _UserListPageState extends State<UserListPage> {
                                 children: [
                                   CircleAvatar(
                                     radius: 22,
-                                    backgroundColor: Colors.white.withOpacity(0.2),
-                                    child: const Icon(Icons.person_rounded,
-                                        color: Colors.white, size: 30),
+                                    backgroundColor: Colors.white.withOpacity(
+                                      0.2,
+                                    ),
+                                    child: const Icon(
+                                      Icons.person_rounded,
+                                      color: Colors.white,
+                                      size: 30,
+                                    ),
                                   ),
                                   const SizedBox(height: 8),
                                   Text(
@@ -140,9 +159,10 @@ class _UserListPageState extends State<UserListPage> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16),
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
                                     textAlign: TextAlign.center,
                                   ),
                                   const SizedBox(height: 4),
@@ -151,7 +171,9 @@ class _UserListPageState extends State<UserListPage> {
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                        color: Colors.white70, fontSize: 14),
+                                      color: Colors.white70,
+                                      fontSize: 14,
+                                    ),
                                     textAlign: TextAlign.center,
                                   ),
                                 ],
@@ -180,10 +202,12 @@ class _UserListPageState extends State<UserListPage> {
                   return GridView.builder(
                     padding: const EdgeInsets.all(12),
                     gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 250, // har bir card uchun maksimal eni
+                      maxCrossAxisExtent:
+                          250, // har bir card uchun maksimal eni
                       crossAxisSpacing: 12,
                       mainAxisSpacing: 12,
-                      childAspectRatio: 1.2, // eni/balandligi nisbatini boshqarish
+                      childAspectRatio:
+                          1.2, // eni/balandligi nisbatini boshqarish
                     ),
                     itemCount: users.length,
                     itemBuilder: (context, index) {
@@ -198,7 +222,9 @@ class _UserListPageState extends State<UserListPage> {
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => LoginScreen(user: user)),
+                              MaterialPageRoute(
+                                builder: (context) => LoginScreen(user: user),
+                              ),
                             );
                           },
                           child: Container(
@@ -216,9 +242,14 @@ class _UserListPageState extends State<UserListPage> {
                               children: [
                                 CircleAvatar(
                                   radius: 22,
-                                  backgroundColor: Colors.white.withOpacity(0.2),
-                                  child: const Icon(Icons.person_rounded,
-                                      color: Colors.white, size: 30),
+                                  backgroundColor: Colors.white.withOpacity(
+                                    0.2,
+                                  ),
+                                  child: const Icon(
+                                    Icons.person_rounded,
+                                    color: Colors.white,
+                                    size: 30,
+                                  ),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
@@ -237,7 +268,10 @@ class _UserListPageState extends State<UserListPage> {
                                   user.role,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                  ),
                                   textAlign: TextAlign.center,
                                 ),
                               ],
@@ -250,13 +284,15 @@ class _UserListPageState extends State<UserListPage> {
                 }
               },
             );
-
           },
         ),
       ),
       floatingActionButton: ElevatedButton.icon(
         onPressed: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) =>WelcomeScreen()));
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => WelcomeScreen()),
+          );
         },
         label: const Text("Чиқиш"),
         style: ElevatedButton.styleFrom(
