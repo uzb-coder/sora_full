@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:sora/Admin/Page/Blyuda/zall.dart';
 import 'dart:async';
 
 import '../../Kirish.dart';
@@ -103,7 +104,7 @@ class _ManagerHomePageState extends State<ManagerHomePage> {
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
             child: ElevatedButton(
               onPressed: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => TablesPage(token: widget.token,)));
+                Navigator.push(context, MaterialPageRoute(builder: (context) => HallsPage(token: widget.token,)));
               },
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(120, 70),

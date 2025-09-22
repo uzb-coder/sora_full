@@ -1323,10 +1323,6 @@ class _FastUnifiedPendingPaymentsPageState
       children: [
         _buildDataCell(DateFormat('dd.MM.yy').format(createdAt), flex: 1),
         _buildDataCell(DateFormat('HH:mm').format(createdAt), flex: 1),
-        _buildDataCell(
-          order.formattedOrderNumber ?? order.orderNumber,
-          flex: 1,
-        ),
         _buildDataCell(order.tableName ?? 'N/A', flex: 1),
         _buildDataCell(order.waiterName ?? 'N/A', flex: 1),
         _buildDataCell(order.items.length.toString(), flex: 1),
@@ -1630,7 +1626,6 @@ class _FastUnifiedPendingPaymentsPageState
                                 children: [
                                   _buildHeaderCell('Сана', flex: 1),
                                   _buildHeaderCell('Вақт', flex: 1),
-                                  _buildHeaderCell('Заказ ', flex: 1),
                                   _buildHeaderCell('Стол ', flex: 1),
                                   _buildHeaderCell('Официант ', flex: 1),
                                   _buildHeaderCell('Таомлар ', flex: 1),

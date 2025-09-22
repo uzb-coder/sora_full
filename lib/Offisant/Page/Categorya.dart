@@ -1106,7 +1106,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     Category selectedCategory,
     double width,
   ) {
-    // Local helper: normalize
     String n(String? s) => (s ?? '').trim().toLowerCase();
 
     // 1) Subkategoriya ro‘yxatini tayyorlab olish:
