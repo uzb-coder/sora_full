@@ -1301,7 +1301,7 @@ class _FastUnifiedPendingPaymentsPageState
     return Row(
       children: [
         _buildDataCell(DateFormat('dd.MM').format(createdAt), flex: 1),
-        _buildDataCell(DateFormat('HH:mm').format(createdAt), flex: 1),
+        _buildDataCell(DateFormat('HH:mm').format(createdAt.add(Duration(hours: 5))), flex: 1),
         _buildDataCell(
           order.formattedOrderNumber ?? order.orderNumber,
           flex: 1,
@@ -1322,7 +1322,7 @@ class _FastUnifiedPendingPaymentsPageState
     return Row(
       children: [
         _buildDataCell(DateFormat('dd.MM.yy').format(createdAt), flex: 1),
-        _buildDataCell(DateFormat('HH:mm').format(createdAt), flex: 1),
+        _buildDataCell(DateFormat('HH:mm').format(createdAt.add(Duration(hours: 5))), flex: 1),
         _buildDataCell(order.tableName ?? 'N/A', flex: 1),
         _buildDataCell(order.waiterName ?? 'N/A', flex: 1),
         _buildDataCell(order.items.length.toString(), flex: 1),
@@ -1624,23 +1624,23 @@ class _FastUnifiedPendingPaymentsPageState
                           selectedDateRange == 'closed'
                               ? Row(
                                 children: [
-                                  _buildHeaderCell('Сана', flex: 1),
-                                  _buildHeaderCell('Вақт', flex: 1),
-                                  _buildHeaderCell('Стол ', flex: 1),
-                                  _buildHeaderCell('Официант ', flex: 1),
-                                  _buildHeaderCell('Таомлар ', flex: 1),
-                                  _buildHeaderCell('Жами', flex: 2),
+                                  _buildHeaderCell('Sana', flex: 1),
+                                  _buildHeaderCell('Vaqt', flex: 1),
+                                  _buildHeaderCell('Stol', flex: 1),
+                                  _buildHeaderCell('Ofitsiant ', flex: 1),
+                                  _buildHeaderCell('Taomlar ', flex: 1),
+                                  _buildHeaderCell('Jami', flex: 2),
                                 ],
                               )
                               : Row(
                                 children: [
-                                  _buildHeaderCell('Сана', flex: 1),
-                                  _buildHeaderCell('Вақт', flex: 1),
-                                  _buildHeaderCell('Заказ', flex: 1),
-                                  _buildHeaderCell('Официант', flex: 2),
-                                  _buildHeaderCell('Стол', flex: 1),
+                                  _buildHeaderCell('Sana', flex: 1),
+                                  _buildHeaderCell('Vaqt', flex: 1),
+                                  _buildHeaderCell('Zakaz', flex: 1),
+                                  _buildHeaderCell('Ofitsiant', flex: 2),
+                                  _buildHeaderCell('Stol', flex: 1),
                                   _buildHeaderCell(
-                                    'Хизмат ҳақи',
+                                    'Xizmat haqi',
                                     flex: 1,
                                   ), // New column
                                   _buildHeaderCell('Жами', flex: 2),

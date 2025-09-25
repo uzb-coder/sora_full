@@ -1591,6 +1591,8 @@ class _OrderTablePageState extends State<OrderTablePage> {
   }
 
   Widget _buildDateCell(DateTime date) {
+    final localDate = date.add(Duration(hours: 5)); // ✅ 5 soat qo‘shildi
+
     return Container(
       width: 60, // Widget kengligi, ekranga full emas
       height: 40, // Widget balandligi, ekranga full emas
@@ -1613,12 +1615,12 @@ class _OrderTablePageState extends State<OrderTablePage> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
-            DateFormat('dd.MM.yy').format(date),
+            DateFormat('dd.MM.yy').format(localDate), // ✅ sana
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 10),
           ),
           SizedBox(height: 2),
           Text(
-            DateFormat('HH:mm').format(date),
+            DateFormat('HH:mm').format(localDate), // ✅ vaqt
             style: TextStyle(color: Colors.grey[600], fontSize: 9),
           ),
         ],

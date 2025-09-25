@@ -8,7 +8,6 @@ import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'package:sora/data/user_datas.dart';
-
 import 'package:win32/win32.dart';
 
 class OrderResponse {
@@ -180,375 +179,6 @@ class ApiResponse<T> {
   ApiResponse({required this.success, this.data, required this.message});
 }
 
-class UsbPrinterService {
-  Future<List<String>> getConnectedPrinters() async {
-    try {
-      final flags = PRINTER_ENUM_LOCAL | PRINTER_ENUM_CONNECTIONS;
-      final pcbNeeded = calloc<DWORD>();
-      final pcReturned = calloc<DWORD>();
-
-      EnumPrinters(flags, nullptr, 2, nullptr, 0, pcbNeeded, pcReturned);
-
-      final cbBuf = pcbNeeded.value;
-      if (cbBuf == 0) {
-        print("❌ Printerlar topilmadi");
-        calloc.free(pcbNeeded);
-        calloc.free(pcReturned);
-        return [];
-      }
-
-      final pPrinterEnum = calloc<BYTE>(cbBuf);
-
-      final result = EnumPrinters(
-        flags,
-        nullptr,
-        2,
-        pPrinterEnum,
-        cbBuf,
-        pcbNeeded,
-        pcReturned,
-      );
-
-      List<String> printerNames = [];
-      if (result != 0) {
-        final printerInfo = pPrinterEnum.cast<PRINTER_INFO_2>();
-        final count = pcReturned.value;
-        print("🖨️ ${count} ta printer topildi");
-
-        for (var i = 0; i < count; i++) {
-          final printerName =
-              printerInfo.elementAt(i).ref.pPrinterName.toDartString();
-          final portName =
-              printerInfo.elementAt(i).ref.pPortName.toDartString();
-
-          print("🖨️ Printer: $printerName, Port: $portName");
-
-          if (portName.toUpperCase().contains('USB') ||
-              portName.toUpperCase().contains('COM') ||
-              portName.toUpperCase().contains('LPT') ||
-              printerName.toLowerCase().contains('thermal') ||
-              printerName.toLowerCase().contains('pos') ||
-              printerName.toLowerCase().contains('receipt')) {
-            printerNames.add(printerName);
-            print("✅ Printer qo'shildi: $printerName");
-          }
-        }
-      }
-
-      calloc.free(pcbNeeded);
-      calloc.free(pcReturned);
-      calloc.free(pPrinterEnum);
-
-      print("🖨️ Umumiy mos printerlar: ${printerNames.length}");
-      return printerNames;
-    } catch (e) {
-      print("❌ Printerlarni olishda xatolik: $e");
-      return [];
-    }
-  }
-
-  Future<ApiResponse<bool>> printOrderReceipt(Order order) async {
-    print("🖨️ Chek chop etish boshlandi: ${order.orderNumber}");
-
-    try {
-      final printers = await getConnectedPrinters();
-      if (printers.isEmpty) {
-        print("❌ Hech qanday printer topilmadi");
-        final defaultPrinters = [
-          'POS-58',
-          'POS-80',
-          'Generic / Text Only',
-          'Thermal Printer',
-        ];
-        for (String printerName in defaultPrinters) {
-          try {
-            final result = await _printToSpecificPrinter(order, printerName);
-            if (result.success) return result;
-          } catch (e) {
-            print("❌ $printerName bilan chop etishda xatolik: $e");
-            continue;
-          }
-        }
-        return ApiResponse(
-          success: false,
-          message: 'Hech qanday printer topilmadi yoki ishlamayapti',
-        );
-      }
-
-      for (String printerName in printers) {
-        try {
-          final result = await _printToSpecificPrinter(order, printerName);
-          if (result.success) return result;
-        } catch (e) {
-          print("❌ $printerName bilan chop etishda xatolik: $e");
-          continue;
-        }
-      }
-
-      return ApiResponse(
-        success: false,
-        message: 'Barcha printerlar bilan urinish muvaffaqiyatsiz tugadi',
-      );
-    } catch (e) {
-      print("❌ Umumiy xatolik: $e");
-      return ApiResponse(success: false, message: 'Chop etishda xatolik: $e');
-    }
-  }
-
-  Future<ApiResponse<bool>> _printToSpecificPrinter(
-    Order order,
-    String printerName,
-  ) async {
-    final hPrinter = calloc<HANDLE>();
-    final docInfo = calloc<DOC_INFO_1>();
-
-    docInfo.ref.pDocName = TEXT('Restaurant Order Receipt');
-    docInfo.ref.pOutputFile = nullptr;
-    docInfo.ref.pDatatype = TEXT('RAW');
-
-    try {
-      print("🖨️ Printer ochilayotgan: $printerName");
-      final openResult = OpenPrinter(TEXT(printerName), hPrinter, nullptr);
-      if (openResult == 0) {
-        final error = GetLastError();
-        print("❌ Printerni ochishda xatolik: $error");
-        return ApiResponse(
-          success: false,
-          message: 'Printerni ochishda xatolik: $printerName',
-        );
-      }
-
-      print("📄 Print job boshlanayotgan...");
-      final jobId = StartDocPrinter(hPrinter.value, 1, docInfo.cast());
-      if (jobId == 0) {
-        final error = GetLastError();
-        print("❌ Print job xatolik: $error");
-        ClosePrinter(hPrinter.value);
-        return ApiResponse(success: false, message: 'Print Job xatolik');
-      }
-
-      final pageResult = StartPagePrinter(hPrinter.value);
-      if (pageResult == 0) {
-        final error = GetLastError();
-        print("❌ Sahifa boshlanishida xatolik: $error");
-      }
-
-      final escPosData = await _buildReceiptData(order);
-      print("📋 Chek ma'lumotlari tayyor: ${escPosData.length} bayt");
-
-      final bytesPointer = calloc<Uint8>(escPosData.length);
-      final bytesList = bytesPointer.asTypedList(escPosData.length);
-      bytesList.setAll(0, escPosData);
-
-      final bytesWritten = calloc<DWORD>();
-      final success = WritePrinter(
-        hPrinter.value,
-        bytesPointer,
-        escPosData.length,
-        bytesWritten,
-      );
-
-      print("📝 Yozildi: ${bytesWritten.value} / ${escPosData.length} bayt");
-
-      EndPagePrinter(hPrinter.value);
-      EndDocPrinter(hPrinter.value);
-      ClosePrinter(hPrinter.value);
-
-      calloc.free(bytesPointer);
-      calloc.free(bytesWritten);
-      calloc.free(hPrinter);
-      calloc.free(docInfo);
-
-      if (success == 0) {
-        final error = GetLastError();
-        print('❌ WritePrinter xatolik: $error');
-        return ApiResponse(
-          success: false,
-          message: 'Ma\'lumot yuborishda xatolik',
-        );
-      } else {
-        print('✅ Chek muvaffaqiyatli chop etildi: $printerName');
-        return ApiResponse(
-          success: true,
-          data: true,
-          message: 'Chek muvaffaqiyatli chop etildi',
-        );
-      }
-    } catch (e) {
-      print('❌ Chop etishda xatolik: $e');
-      try {
-        ClosePrinter(hPrinter.value);
-        calloc.free(hPrinter);
-        calloc.free(docInfo);
-      } catch (_) {}
-      return ApiResponse(success: false, message: 'Chop etishda xatolik: $e');
-    }
-  }
-
-  Future<List<int>> loadLogoBytes() async {
-    try {
-      ByteData byteData = await rootBundle.load('assets/rasm/sara.png');
-      final bytes = byteData.buffer.asUint8List();
-      final image = img.decodeImage(bytes)!;
-
-      final resized = img.copyResize(image, width: 512);
-      final width = resized.width;
-      final height = resized.height;
-      final alignedWidth = (width + 7) ~/ 8 * 8;
-
-      List<int> escPosLogo = [];
-      escPosLogo.addAll([0x1D, 0x76, 0x30, 0x00]);
-      escPosLogo.addAll([
-        (alignedWidth ~/ 8) & 0xFF,
-        ((alignedWidth ~/ 8) >> 8) & 0xFF,
-        height & 0xFF,
-        (height >> 8) & 0xFF,
-      ]);
-
-      for (int y = 0; y < height; y++) {
-        for (int x = 0; x < alignedWidth; x += 8) {
-          int byte = 0;
-          for (int bit = 0; bit < 8; bit++) {
-            int pixelX = x + bit;
-            if (pixelX < width) {
-              int pixel = resized.getPixel(pixelX, y);
-              int luminance = img.getLuminance(pixel);
-              if (luminance < 128) byte |= (1 << (7 - bit));
-            }
-          }
-          escPosLogo.add(byte);
-        }
-      }
-
-      print("🖼️ Logo yuklandi: ${width}x${height}");
-      return escPosLogo;
-    } catch (e) {
-      print('❌ Logo yuklashda xato: $e');
-      return [];
-    }
-  }
-
-  Future<List<int>> _buildReceiptData(Order order) async {
-    final logoBytes = await loadLogoBytes();
-
-    List<int> centeredLogo = [];
-    if (logoBytes.isNotEmpty) {
-      centeredLogo.addAll([0x1B, 0x61, 0x01]);
-      centeredLogo.addAll(logoBytes);
-      centeredLogo.addAll([0x1B, 0x61, 0x00]);
-    }
-
-    final now = DateTime.now();
-    final printDateTime = DateFormat('dd.MM.yyyy HH:mm').format(now);
-
-    return <int>[
-      0x1B, 0x40, // Printer init
-      ...centeredLogo,
-      ...centerText("Namangan shahri, Namangan tumani"),
-      ...centerText("Tel: +998 90 123 45 67"),
-      ...centerText("----------------------------------"),
-      0x1B, 0x21, 0x20,
-      0x1B, 0x45, 0x01,
-      ...centerText("BUYURTMA CHEKI"),
-      0x1B, 0x45, 0x00,
-      0x1B, 0x21, 0x00,
-      0x0A,
-      ...centerText(printDateTime),
-      ...centerText("----------------------------------"),
-      0x1B, 0x45, 0x01,
-      ...leftAlignText("       Buyurtma: ${order.orderNumber}"),
-      ...leftAlignText("       Stol: ${order.tableNumber}"),
-      ...leftAlignText("       Ofitsiant: ${order.waiterName}"),
-      0x1B, 0x45, 0x00,
-      ...centerText("----------------------------------"),
-      0x1B, 0x21, 0x10,
-      0x1B, 0x45, 0x01,
-      ...centerText("MAHSULOTLAR"),
-      0x1B, 0x45, 0x00,
-      0x1B, 0x21, 0x00,
-      ...centerText("----------------------------------"),
-      ...buildItemsList(order.items),
-      ...centerText("----------------------------------"),
-      0x1B, 0x21, 0x00,
-      ...centerText("Mahsulotlar: ${formatNumber(order.subtotal)} so'm"),
-      ...centerText("Xizmat haqi: ${formatNumber(order.serviceAmount)} so'm"),
-      0x0A,
-      0x0A,
-      0x1B, 0x21, 0x20,
-      0x1B, 0x45, 0x01,
-      ...centerText("JAMI: ${formatNumber(order.finalTotal)} so'm"),
-      0x1B, 0x45, 0x00,
-      0x1B, 0x21, 0x00,
-      ...centerText("----------------------------------"),
-      0x1B, 0x21, 0x20,
-      0x1B, 0x45, 0x01,
-      ...centerText("TASHRIFINGIZ UCHUN"),
-      ...centerText("RAHMAT!"),
-      0x1B, 0x45, 0x00,
-      0x1B, 0x21, 0x00,
-      0x0A,
-      0x0A,
-      0x1B, 0x64, 0x06,
-      0x1D, 0x56, 0x00,
-    ];
-  }
-
-  List<int> buildItemsList(List<OrderItem> items) {
-    List<int> result = [];
-    int itemNum = 1;
-
-    for (var item in items) {
-      final namePart = '$itemNum. ${item.name}';
-      final qtyTotal =
-          '${item.quantity}x  ${formatNumber(item.price * item.quantity)}';
-
-      const int lineLength = 32;
-      String line = namePart;
-      int spaceCount =
-          lineLength -
-          utf8.encode(namePart).length -
-          utf8.encode(qtyTotal).length;
-      if (spaceCount < 1) spaceCount = 1;
-
-      line += ' ' * spaceCount + qtyTotal;
-      result.addAll(centerText(line));
-      result.add(0x0A);
-      itemNum++;
-    }
-    return result;
-  }
-
-  List<int> centerText(String text) {
-    List<int> result = [];
-    final lines = text.split('\n');
-    for (final line in lines) {
-      if (line.isNotEmpty) {
-        result.addAll([0x1B, 0x61, 0x01]);
-        result.addAll(utf8.encode(line));
-        result.add(0x0A);
-        result.addAll([0x1B, 0x61, 0x00]);
-      }
-    }
-    return result;
-  }
-
-  List<int> leftAlignText(String text) {
-    List<int> result = [];
-    result.addAll([0x1B, 0x61, 0x00]);
-    result.addAll(utf8.encode(text));
-    result.add(0x0A);
-    return result;
-  }
-
-  String formatNumber(dynamic number) {
-    final numStr = number.toString().split('.');
-    return numStr[0].replaceAllMapped(
-      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-      (Match m) => '${m[1]} ',
-    );
-  }
-}
-
 class OrderTablePage1 extends StatefulWidget {
   final String waiterName;
 
@@ -561,7 +191,6 @@ class OrderTablePage1 extends StatefulWidget {
 class _OrderTablePageState extends State<OrderTablePage1> {
   OrderResponse? orderResponse;
   String responseText = "Ma'lumot yuklanmadi";
-  final UsbPrinterService printerService = UsbPrinterService();
   List<Order> filteredOrders = [];
   bool isLoading = false;
   DateTime? selectedDate;
@@ -672,37 +301,6 @@ class _OrderTablePageState extends State<OrderTablePage1> {
 
           return waiterMatch && dateMatch;
         }).toList();
-  }
-
-  Future<void> _printOrder(Order order, int index) async {
-    try {
-      final result = await printerService.printOrderReceipt(order);
-      if (result.success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.message),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(result.message),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 3),
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Xatolik: $e'),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 3),
-        ),
-      );
-    }
   }
 
   @override
@@ -983,19 +581,6 @@ class _OrderTablePageState extends State<OrderTablePage1> {
                     ),
                   ),
                 ),
-                // DataColumn(
-                //   label: Expanded(
-                //     child: Text(
-                //       "Chop",
-                //       style: TextStyle(
-                //         fontSize: 13,
-                //         fontWeight: FontWeight.bold,
-                //         color: Color(0xFF0d5720),
-                //       ),
-                //       textAlign: TextAlign.center,
-                //     ),
-                //   ),
-                // ),
               ],
               rows:
                   filteredOrders.asMap().entries.map((entry) {
@@ -1110,75 +695,32 @@ class _OrderTablePageState extends State<OrderTablePage1> {
                           ),
                         ),
                         DataCell(
-                          Container(
-                            width: double.infinity,
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  order.completedAt.isNotEmpty
-                                      ? DateFormat('HH:mm').format(
-                                        DateTime.parse(order.completedAt),
-                                      )
-                                      : "-",
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.grey[800],
+                            Container(
+                              width: double.infinity,
+                              padding: EdgeInsets.symmetric(vertical: 8),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    order.completedAt.isNotEmpty
+                                        ? "${DateFormat('HH:mm').format(
+                                      DateTime.parse(order.completedAt).add(Duration(hours: 5)),
+                                    )}  "
+                                        "${DateFormat('dd.MM').format(
+                                      DateTime.parse(order.completedAt).add(Duration(hours: 5)),
+                                    )}"
+                                        : "-",
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey[800],
+                                    ),
                                   ),
-                                ),
-                                SizedBox(height: 2),
-                                Text(
-                                  order.completedAt.isNotEmpty
-                                      ? DateFormat('dd.MM').format(
-                                        DateTime.parse(order.completedAt),
-                                      )
-                                      : "-",
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                                ],
+                              ),
+                            )
+
                         ),
-                        // DataCell(
-                        //   Container(
-                        //     width: double.infinity,
-                        //     padding: EdgeInsets.symmetric(vertical: 8),
-                        //     child: Center(
-                        //       child: Container(
-                        //         width: 70,
-                        //         height: 32,
-                        //         child: ElevatedButton(
-                        //           onPressed: order.receiptPrinted ? null : () => _printOrder(order, index),
-                        //           style: ElevatedButton.styleFrom(
-                        //             backgroundColor: order.receiptPrinted
-                        //                 ? Colors.grey[300]
-                        //                 : Color(0xFF0d5720),
-                        //             foregroundColor: order.receiptPrinted
-                        //                 ? Colors.grey[600]
-                        //                 : Colors.white,
-                        //             padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        //             shape: RoundedRectangleBorder(
-                        //               borderRadius: BorderRadius.circular(8),
-                        //             ),
-                        //             elevation: order.receiptPrinted ? 0 : 2,
-                        //           ),
-                        //           child: Text(
-                        //             order.receiptPrinted ? '✓' : 'Chop',
-                        //             style: TextStyle(
-                        //               fontSize: 11,
-                        //               fontWeight: FontWeight.w600,
-                        //             ),
-                        //           ),
-                        //         ),
-                        //       ),
-                        //     ),
-                        //   ),
-                        // ),
                       ],
                     );
                   }).toList(),

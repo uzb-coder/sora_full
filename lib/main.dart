@@ -9,18 +9,18 @@ import 'package:window_manager/window_manager.dart';
 void main() async {
   Get.put(TokenController());
   WidgetsFlutterBinding.ensureInitialized(); // <-- MUHIM O'ZGARISH
-  if (Platform.isWindows) {
-    // Window manager sozlash
-    await windowManager.ensureInitialized();
-
-    // Full screen qilish
-    WindowOptions windowOptions = const WindowOptions(fullScreen: true);
-    windowManager.waitUntilReadyToShow(windowOptions, () async {
-      await windowManager.setFullScreen(true); // Doimiy fullscreen
-      await windowManager.show();
-      await windowManager.focus();
-    });
-  }
+  // if (Platform.isWindows) {
+  //   // Window manager sozlash
+  //   await windowManager.ensureInitialized();
+  //
+  //   // Full screen qilish
+  //   WindowOptions windowOptions = const WindowOptions(fullScreen: true);
+  //   windowManager.waitUntilReadyToShow(windowOptions, () async {
+  //     await windowManager.setFullScreen(true); // Doimiy fullscreen
+  //     await windowManager.show();
+  //     await windowManager.focus();
+  //   });
+  // }
   // if (Platform.isAndroid) {
   //   // ✅ Faqat Android qurilmalarda doimiy LANDSCAPE yo‘nalish
   //   await SystemChrome.setPreferredOrientations([

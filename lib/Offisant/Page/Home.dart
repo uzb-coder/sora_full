@@ -2338,10 +2338,11 @@ class _PosScreenState extends State<PosScreen> {
 
   String _formatDateTime(String dateTimeString) {
     try {
-      DateTime dateTime = DateTime.parse(dateTimeString);
-      return DateFormat('HH:mm').format(dateTime);
+      DateTime dateTime = DateTime.parse(dateTimeString).add(Duration(hours: 5));
+      return DateFormat('HH:mm dd.MM.yyyy').format(dateTime);
     } catch (e) {
-      return dateTimeString;
+      return dateTimeString.isNotEmpty ? dateTimeString : "-";
     }
   }
+
 }
