@@ -30,13 +30,12 @@ class OrderResponse {
   factory OrderResponse.fromJson(Map<String, dynamic> json) {
     return OrderResponse(
       success: json['success'] ?? false,
-      orders:
-          (json['orders'] as List<dynamic>?)
-              ?.map((e) => Order.fromJson(e as Map<String, dynamic>))
-              .toList() ??
+      orders: (json['orders'] as List<dynamic>?)
+          ?.map((e) => Order.fromJson(e as Map<String, dynamic>))
+          .toList() ??
           [],
-      totalCount: json['total_count'] ?? 0,
-      totalAmount: json['total_amount'] ?? 0,
+      totalCount: (json['total_count'] as num?)?.toInt() ?? 0,  // ✅
+      totalAmount: (json['total_amount'] as num?)?.toInt() ?? 0, // ✅
       paymentStats: PaymentStats.fromJson(json['payment_stats'] ?? {}),
       timestamp: json['timestamp'] ?? '',
     );
@@ -90,11 +89,11 @@ class Order {
       orderNumber: json['orderNumber'] ?? '',
       tableNumber: json['tableNumber'] ?? '',
       waiterName: json['waiterName'] ?? '',
-      itemsCount: json['itemsCount'] ?? 0,
-      subtotal: json['subtotal'] ?? 0,
-      serviceAmount: json['serviceAmount'] ?? 0,
-      taxAmount: json['taxAmount'] ?? 0,
-      finalTotal: json['finalTotal'] ?? 0,
+      itemsCount: (json['itemsCount'] as num?)?.toInt() ?? 0,    // ✅
+      subtotal: (json['subtotal'] as num?)?.toInt() ?? 0,        // ✅
+      serviceAmount: (json['serviceAmount'] as num?)?.toInt() ?? 0, // ✅
+      taxAmount: (json['taxAmount'] as num?)?.toInt() ?? 0,      // ✅
+      finalTotal: (json['finalTotal'] as num?)?.toInt() ?? 0,    // ✅
       completedAt: json['completedAt'] ?? '',
       paidAt: json['paidAt'] ?? '',
       status: json['status'] ?? '',
@@ -102,10 +101,9 @@ class Order {
       paymentMethod: json['paymentMethod'] ?? '',
       paidBy: json['paidBy'] ?? '',
       completedBy: json['completedBy'] ?? '',
-      items:
-          (json['items'] as List<dynamic>?)
-              ?.map((e) => OrderItem.fromJson(e as Map<String, dynamic>))
-              .toList() ??
+      items: (json['items'] as List<dynamic>?)
+          ?.map((e) => OrderItem.fromJson(e as Map<String, dynamic>))
+          .toList() ??
           [],
       orderDate: json['order_date'] ?? '',
     );
@@ -133,8 +131,8 @@ class OrderItem {
     return OrderItem(
       foodId: json['food_id'] ?? '',
       name: json['name'] ?? '',
-      price: json['price'] ?? 0,
-      quantity: json['quantity'] ?? 0,
+      price: (json['price'] as num?)?.toInt() ?? 0,     // ✅
+      quantity: (json['quantity'] as num?)?.toInt() ?? 0, // ✅
       categoryName: json['category_name'] ?? '',
       printerId: json['printer_id'],
     );
@@ -158,25 +156,14 @@ class PaymentStats {
 
   factory PaymentStats.fromJson(Map<String, dynamic> json) {
     return PaymentStats(
-      byMethod:
-          (json['by_method'] as Map<String, dynamic>?)?.map(
-            (key, value) => MapEntry(key, value as int),
-          ) ??
-          {},
-      totalCash: json['total_cash'] ?? 0,
-      totalCard: json['total_card'] ?? 0,
-      totalClick: json['total_click'] ?? 0,
-      totalMixed: json['total_mixed'] ?? 0,
+      byMethod: (json['by_method'] as Map<String, dynamic>?)
+          ?.map((key, value) => MapEntry(key, (value as num).toInt())) ?? {}, // ✅
+      totalCash: (json['total_cash'] as num?)?.toInt() ?? 0,   // ✅
+      totalCard: (json['total_card'] as num?)?.toInt() ?? 0,   // ✅
+      totalClick: (json['total_click'] as num?)?.toInt() ?? 0, // ✅
+      totalMixed: (json['total_mixed'] as num?)?.toInt() ?? 0, // ✅
     );
   }
-}
-
-class ApiResponse<T> {
-  final bool success;
-  final T? data;
-  final String message;
-
-  ApiResponse({required this.success, this.data, required this.message});
 }
 
 class OrderTablePage1 extends StatefulWidget {
