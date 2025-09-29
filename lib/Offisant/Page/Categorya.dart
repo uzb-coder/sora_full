@@ -257,6 +257,8 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
 
       // API dan mahsulotlarni olish
       final url = Uri.parse("$api/foods/list");
+      print(url);
+      print(widget.token);
 
       final response = await http
           .get(
@@ -1305,15 +1307,23 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         return GestureDetector(
           onTap: () {
             if (product.unit == 'kg') {
-              _showKgInputModal(context, product);
+              if (product.soni != 0) {
+                _showKgInputModal(context, product);
+              }
             } else {
-              _updateCart(product.id, 1);
+              if (product.soni != 0) {
+                _updateCart(product.id, 1);
+              }
             }
           },
           child: Container(
             constraints: BoxConstraints(maxWidth: maxCardWidth, maxHeight: 180),
             decoration: BoxDecoration(
-              color: const Color(0xFF144D37),
+              color:
+                  product.soni != 0
+                      ? const Color(0xFF144D37)
+                      // ignore: deprecated_member_use
+                      : const Color(0xFF144D37).withOpacity(.4),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color:
@@ -1377,140 +1387,171 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                     ),
                   ),
                 ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (product.unit == 'kg' && kgInCart > 0) ...[
-                      GestureDetector(
-                        onTap: () => _updateCart(product.id, -1),
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: Colors.redAccent,
-                            borderRadius: BorderRadius.circular(16),
+                Visibility(
+                  visible: product.soni == 0,
+                  child: Text(
+                    "Mahsulot tugagan!",
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ),
+                Visibility(
+                  visible: product.soni != 0,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (product.unit == 'kg' && kgInCart > 0) ...[
+                        GestureDetector(
+                          onTap: () {
+                            if (product.soni != 0) {
+                              _updateCart(product.id, -1);
+                            }
+                          },
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(
+                              Icons.remove,
+                              size: 18,
+                              color: Colors.white,
+                            ),
                           ),
-                          child: const Icon(
-                            Icons.remove,
-                            size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () {
+                            if (product.unit == 'kg') {
+                              if (product.soni != 0) {
+                                _showKgInputModal(context, product);
+                              }
+                            } else {
+                              if (product.soni != 0) {
+                                _updateCart(product.id, 1);
+                              }
+                            }
+                          },
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(
+                              Icons.add,
+                              size: 18,
+                              color: const Color(0xFF144D37),
+                            ),
+                          ),
+                        ),
+                      ] else if (product.unit != 'kg' &&
+                          quantityInCart > 0) ...[
+                        GestureDetector(
+                          onTap: () {
+                            if (product.soni != 0) {
+                              _updateCart(product.id, -1);
+                            }
+                          },
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(
+                              Icons.remove,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '$quantityInCart',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
                             color: Colors.white,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: () {
-                          if (product.unit == 'kg') {
-                            _showKgInputModal(context, product);
-                          } else {
-                            _updateCart(product.id, 1);
-                          }
-                        },
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Icon(
-                            Icons.add,
-                            size: 18,
-                            color: const Color(0xFF144D37),
-                          ),
-                        ),
-                      ),
-                    ] else if (product.unit != 'kg' && quantityInCart > 0) ...[
-                      GestureDetector(
-                        onTap: () => _updateCart(product.id, -1),
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: Colors.redAccent,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: const Icon(
-                            Icons.remove,
-                            size: 18,
-                            color: Colors.white,
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () {
+                            if (product.unit == 'kg') {
+                              if (product.soni != 0) {
+                                _showKgInputModal(context, product);
+                              }
+                            } else {
+                              if (product.soni != 0) {
+                                _updateCart(product.id, 1);
+                              }
+                            }
+                          },
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(
+                              Icons.add,
+                              size: 18,
+                              color: const Color(0xFF144D37),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '$quantityInCart',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      GestureDetector(
-                        onTap: () {
-                          if (product.unit == 'kg') {
-                            _showKgInputModal(context, product);
-                          } else {
-                            _updateCart(product.id, 1);
-                          }
-                        },
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Icon(
-                            Icons.add,
-                            size: 18,
-                            color: const Color(0xFF144D37),
+                      ] else ...[
+                        GestureDetector(
+                          onTap: () {
+                            if (product.unit == 'kg') {
+                              if (product.soni != 0) {
+                                _showKgInputModal(context, product);
+                              }
+                            } else {
+                              if (product.soni != 0) {
+                                _updateCart(product.id, 1);
+                              }
+                            }
+                          },
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(
+                              Icons.add,
+                              size: 18,
+                              color: const Color(0xFF144D37),
+                            ),
                           ),
                         ),
-                      ),
-                    ] else ...[
-                      GestureDetector(
-                        onTap: () {
-                          if (product.unit == 'kg') {
-                            _showKgInputModal(context, product);
-                          } else {
-                            _updateCart(product.id, 1);
-                          }
-                        },
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Icon(
-                            Icons.add,
-                            size: 18,
-                            color: const Color(0xFF144D37),
+                        SizedBox(width: 15),
+                        GestureDetector(
+                          onTap: () => _showNoteInputModal(context, product),
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.blueAccent,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(
+                              Icons.edit,
+                              size: 16,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
-                      ),
-                      SizedBox(width: 15),
-                      GestureDetector(
-                        onTap: () => _showNoteInputModal(context, product),
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: Colors.blueAccent,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: const Icon(
-                            Icons.edit,
-                            size: 16,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
                 if ((product.unit == 'kg' && kgInCart > 0) ||
                     (product.unit != 'kg' && quantityInCart > 0))

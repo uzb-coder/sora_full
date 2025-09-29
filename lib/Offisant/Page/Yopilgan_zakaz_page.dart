@@ -958,6 +958,7 @@ class _OrderTablePageState extends State<OrderTablePage> {
   void initState() {
     super.initState();
     // Default bugungi sana filtri
+    _loadOrders(forceRefresh: true);
     final today = DateTime.now();
     startDate = DateTime(today.year, today.month, today.day);
     endDate = today;
@@ -1209,15 +1210,15 @@ class _OrderTablePageState extends State<OrderTablePage> {
                 color: Colors.white,
               ),
             ),
-            SizedBox(height: 4),
-            Text(
-              'Xizmat haqi: ${printerService.formatNumber(totalService)} so\'m',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-                fontSize: isSmallScreen ? 16 : 20,
-              ),
-            ),
+            // SizedBox(height: 4),
+            // Text(
+            //   'Xizmat haqi: ${printerService.formatNumber(totalService)} so\'m',
+            //   style: TextStyle(
+            //     fontWeight: FontWeight.bold,
+            //     color: Colors.white,
+            //     fontSize: isSmallScreen ? 16 : 20,
+            //   ),
+            // ),
           ],
         ),
         actions: [
@@ -1226,26 +1227,26 @@ class _OrderTablePageState extends State<OrderTablePage> {
             icon: Icon(Icons.refresh, color: Colors.white),
             tooltip: 'Yangilash',
           ),
-          IconButton(
-            onPressed: _selectDateRange,
-            icon: Icon(Icons.date_range, color: Colors.white),
-            tooltip: 'Sana tanlash',
-          ),
-          IconButton(
-            padding: EdgeInsets.only(right: 20, left: 20),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder:
-                      (context) =>
-                          OrderTablePage1(waiterName: widget.waiterName),
-                ),
-              );
-            },
-            icon: Icon(Icons.save, color: Colors.white, size: 40),
-            tooltip: 'Hamma buyurtmalar',
-          ),
+          // IconButton(
+          //   onPressed: _selectDateRange,
+          //   icon: Icon(Icons.date_range, color: Colors.white),
+          //   tooltip: 'Sana tanlash',
+          // ),
+          // IconButton(
+          //   padding: EdgeInsets.only(right: 20, left: 20),
+          //   onPressed: () {
+          //     Navigator.push(
+          //       context,
+          //       MaterialPageRoute(
+          //         builder:
+          //             (context) =>
+          //                 OrderTablePage1(waiterName: widget.waiterName),
+          //       ),
+          //     );
+          //   },
+          //   icon: Icon(Icons.save, color: Colors.white, size: 40),
+          //   tooltip: 'Hamma buyurtmalar',
+          // ),
         ],
       ),
 

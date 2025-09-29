@@ -4,15 +4,11 @@ class Subcategory {
   Subcategory({required this.title});
 
   factory Subcategory.fromJson(Map<String, dynamic> json) {
-    return Subcategory(
-      title: json['title'] ?? '',
-    );
+    return Subcategory(title: json['title'] ?? '');
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'title': title,
-    };
+    return {'title': title};
   }
 }
 
@@ -26,6 +22,7 @@ class Ovqat {
   final String? description;
   final String? image;
   final String? unit;
+  final dynamic soni;
   final List<Subcategory> subcategories;
 
   Ovqat({
@@ -36,6 +33,7 @@ class Ovqat {
     required this.categoryName,
     this.subcategory,
     this.description,
+    this.soni,
     this.image,
     this.unit,
     required this.subcategories,
@@ -50,24 +48,27 @@ class Ovqat {
       price: (json['price'] ?? 0).toDouble(),
 
       // ✅ category obyekt yoki string bo‘lishi mumkin
-      categoryId: category is Map<String, dynamic>
-          ? (category['_id'] ?? '')
-          : category?.toString() ?? '',
-
-      categoryName: category is Map<String, dynamic>
-          ? (category['title'] ?? '')
-          : (json['category_name'] ?? ''),
+      categoryId:
+          category is Map<String, dynamic>
+              ? (category['_id'] ?? '')
+              : category?.toString() ?? '',
+      soni: json['soni'],
+      categoryName:
+          category is Map<String, dynamic>
+              ? (category['title'] ?? '')
+              : (json['category_name'] ?? ''),
 
       subcategory: json['subcategory'],
       description: json['description'],
       image: json['image'],
       unit: json['unit'] ?? '',
 
-      subcategories: (json['subcategories'] is List)
-          ? (json['subcategories'] as List)
-          .map((e) => Subcategory.fromJson(e))
-          .toList()
-          : [],
+      subcategories:
+          (json['subcategories'] is List)
+              ? (json['subcategories'] as List)
+                  .map((e) => Subcategory.fromJson(e))
+                  .toList()
+              : [],
     );
   }
 
@@ -76,10 +77,7 @@ class Ovqat {
       '_id': id,
       'name': name,
       'price': price,
-      'category': {
-        '_id': categoryId,
-        'title': categoryName,
-      },
+      'category': {'_id': categoryId, 'title': categoryName},
       'subcategory': subcategory,
       'description': description,
       'image': image,
