@@ -150,7 +150,6 @@ class Category {
   }
 }
 
-// ===== MODEL =====
 class TableModel {
   final String id;
   final String name;
@@ -987,6 +986,7 @@ class _PosScreenState extends State<PosScreen> {
               subcategory: null,
               categoryName: '',
               subcategories: [],
+              expiration: null,
             ),
       );
 

@@ -35,7 +35,6 @@ class Category {
   factory Category.fromJson(Map<String, dynamic> json) {
     final printer = json['printer_id'];
 
-    // Debug uchun
     print('Debug - Category: ${json['title']}, printer_id: $printer');
 
     String printerId = '';
@@ -55,11 +54,11 @@ class Category {
       printerName: printerName,
       printerIp: printerIp,
       subcategories:
-          (json['subcategories'] is List)
-              ? (json['subcategories'] as List)
-                  .map((e) => e['title']?.toString() ?? '')
-                  .toList()
-              : [],
+      (json['subcategories'] is List)
+          ? (json['subcategories'] as List)
+          .map((e) => e['title']?.toString() ?? '')
+          .toList()
+          : [],
     );
   }
 }
@@ -98,18 +97,13 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
   List<Ovqat> _allProducts = [];
   List<Ovqat> _filteredProducts = [];
   bool _isLoading = true;
-  bool _categoriesLoaded = false; // Kategoriyalar alohida loading
+  bool _categoriesLoaded = false;
   String? _token;
   bool _isSubmitting = false;
   String _searchQuery = '';
 
   final Map<String, Map<String, dynamic>> _cart = {};
   final NumberFormat _currencyFormatter = NumberFormat('#,##0', 'uz_UZ');
-
-  // Yangi cache tizimi
-  static Map<String, dynamic>? _memoryCache;
-  static DateTime? _lastCacheTime;
-  static const Duration _cacheExpiry = Duration(minutes: 30);
 
   @override
   void initState() {
@@ -137,7 +131,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
           debugPrint('Mahsulot o‘chirildi: ${product.name}');
         }
       } else {
-        // Oddiy mahsulotlar uchun
         final newQty = currentEntry['quantity'] + change;
         if (newQty <= 0) {
           _cart.remove(productId);
@@ -146,7 +139,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
           _cart[productId] = {
             'quantity': newQty,
             'kg': currentEntry['kg'],
-            'note': currentEntry['note'] ?? '', // ✏️ izohni saqlash
+            'note': currentEntry['note'] ?? '',
           };
           debugPrint(
             'Oddiy mahsulot qo‘shildi: ${product.name}, soni: $newQty',
@@ -157,10 +150,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
   }
 
   Future<void> _initializeAppFast() async {
-    // Token va kategoriyalarni parallel yuklash
     await Future.wait([_initializeToken(), _loadCategoriesFast()]);
-
-    // Mahsulotlarni background da yuklash
     _loadProductsInBackground();
   }
 
@@ -176,37 +166,21 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     }
   }
 
-  bool _isCacheValid() {
-    return _memoryCache != null &&
-        _lastCacheTime != null &&
-        DateTime.now().difference(_lastCacheTime!) < _cacheExpiry;
-  }
-
-  // Kategoriyalarni tezkor yuklash
   Future<void> _loadCategoriesFast() async {
     try {
-      // Cache dan kategoriyalarni olish
-      if (_isCacheValid() && _memoryCache!['categories'] != null) {
-        _categories = List<Category>.from(_memoryCache!['categories']);
-        setState(() {
-          _categoriesLoaded = true;
-        });
-        return;
-      }
       final api = await UserDatas().getApi();
-
-      // API dan kategoriyalarni olish
       final url = Uri.parse("$api/categories/list");
 
       final response = await http
           .get(
-            url,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ${_token ?? widget.token}',
-            },
-          )
-          .timeout(Duration(seconds: 2)); // Qisqa timeout
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${_token ?? widget.token}',
+        },
+      )
+          .timeout(Duration(seconds: 2));
+
       print(response.body);
       if (response.statusCode == 200) {
         final dynamic decoded = json.decode(response.body);
@@ -220,11 +194,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         } else if (decoded is List) {
           categories = decoded.map((e) => Category.fromJson(e)).toList();
         }
-
-        // Cache ga saqlash
-        _memoryCache ??= {};
-        _memoryCache!['categories'] = categories;
-        _lastCacheTime = DateTime.now();
 
         if (mounted) {
           setState(() {
@@ -241,56 +210,40 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     }
   }
 
-  // Mahsulotlarni background da yuklash
   void _loadProductsInBackground() async {
     try {
-      // Cache dan mahsulotlarni olish
-      if (_isCacheValid() && _memoryCache!['products'] != null) {
-        _allProducts = List<Ovqat>.from(_memoryCache!['products']);
-        setState(() {
-          _isLoading = false;
-        });
-        _filterProductsByCategory();
-        return;
-      }
       final api = await UserDatas().getApi();
-
-      // API dan mahsulotlarni olish
       final url = Uri.parse("$api/foods/list");
       print(url);
       print(widget.token);
 
       final response = await http
           .get(
-            url,
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ${_token ?? widget.token}',
-            },
-          )
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${_token ?? widget.token}',
+        },
+      )
           .timeout(Duration(seconds: 5));
-
+      print(response.body);
       if (response.statusCode == 200) {
+        print(response.body);
         final dynamic decoded = json.decode(response.body);
 
         List<Ovqat> products = [];
         if (decoded is Map<String, dynamic>) {
           final data =
               decoded['foods'] ??
-              decoded['data'] ??
-              decoded['products'] ??
-              decoded;
+                  decoded['data'] ??
+                  decoded['products'] ??
+                  decoded;
           if (data is List) {
             products = data.map((e) => Ovqat.fromJson(e)).toList();
           }
         } else if (decoded is List) {
           products = decoded.map((e) => Ovqat.fromJson(e)).toList();
         }
-
-        // Cache ga saqlash
-        _memoryCache ??= {};
-        _memoryCache!['products'] = products;
-        _lastCacheTime = DateTime.now();
 
         if (mounted) {
           setState(() {
@@ -323,31 +276,30 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       if (filtered.isNotEmpty && _selectedCategoryId == null) {
         final firstProduct = filtered.first;
 
-        // Avval ID bo‘yicha, topilmasa title bo‘yicha qidiring
         Category? matchedCategory = _categories.firstWhere(
-          (cat) => cat.id == firstProduct.categoryId,
+              (cat) => cat.id == firstProduct.categoryId,
           orElse:
               () => Category(
-                id: '',
-                title: '',
-                subcategories: const [],
-                printerName: '',
-                printerIp: '',
-                printerId: '',
-              ),
+            id: '',
+            title: '',
+            subcategories: const [],
+            printerName: '',
+            printerIp: '',
+            printerId: '',
+          ),
         );
         if (matchedCategory.id.isEmpty) {
           matchedCategory = _categories.firstWhere(
-            (cat) => (cat.title) == (firstProduct.categoryName),
+                (cat) => (cat.title) == (firstProduct.categoryName),
             orElse:
                 () => Category(
-                  id: '',
-                  title: '',
-                  subcategories: const [],
-                  printerName: '',
-                  printerIp: '',
-                  printerId: '',
-                ),
+              id: '',
+              title: '',
+              subcategories: const [],
+              printerName: '',
+              printerIp: '',
+              printerId: '',
+            ),
           );
         }
 
@@ -362,12 +314,11 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       }
     } else if (_selectedCategoryId != null ||
         _selectedCategoryName.isNotEmpty) {
-      // Kategoriya tanlangan bo‘lsa — ID yoki title bo‘yicha mos keltiramiz
       filtered =
           _allProducts.where((product) {
             final sameId =
                 (product.categoryId?.toString() ?? '') ==
-                (_selectedCategoryId ?? '');
+                    (_selectedCategoryId ?? '');
             final sameName = (product.categoryName) == (_selectedCategoryName);
             if (!(sameId || sameName)) return false;
 
@@ -385,23 +336,20 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     });
   }
 
-  // <-- _OrderScreenContentState ichiga joylang (istalgan joyga, masalan _filterProductsByCategory() dan oldin)
   String _n(String? s) => (s ?? '').trim().toLowerCase();
 
   List<String> _visibleSubsFor(Category selectedCategory) {
-    // 1) Kategoriya JSON’dan kelsa — o‘shani ishlatamiz
     if (selectedCategory.subcategories.isNotEmpty) {
       final list =
-          selectedCategory.subcategories
-              .map((e) => e.trim())
-              .where((e) => e.isNotEmpty)
-              .toSet()
-              .toList()
-            ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      selectedCategory.subcategories
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       return list;
     }
 
-    // 2) Aks holda mahsulotlardan yig‘amiz (ID yoki nom bo‘yicha mos kelsa)
     final set = <String>{};
     for (final p in _allProducts) {
       final sameId = (p.categoryId?.toString() ?? '') == selectedCategory.id;
@@ -412,16 +360,16 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     }
 
     final list =
-        set.toList()
-          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    set.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return list;
   }
 
   void _selectCategory(
-    String categoryId,
-    String categoryTitle, {
-    String? subcategory,
-  }) {
+      String categoryId,
+      String categoryTitle, {
+        String? subcategory,
+      }) {
     setState(() {
       _selectedCategoryId = categoryId;
       _selectedCategoryName = categoryTitle;
@@ -481,7 +429,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         if (mounted) {
           _showSuccess(result['message'] ?? 'Zakaz muvaffaqiyatli yuborildi!');
           widget.onOrderCreated?.call();
-          Navigator.of(context).pop(); // ✅ darhol yopiladi
+          Navigator.of(context).pop();
         }
       } else {
         if (mounted) {
@@ -493,7 +441,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     }
   }
 
-  // 🔹 Zakazni serverga yuborish
   Future<Map<String, dynamic>> _sendOrderInBackground() async {
     try {
       if (_cart.isEmpty) {
@@ -504,21 +451,21 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       }
 
       final orderItems =
-          _cart.entries
-              .map((e) {
-                final product = _findProductById(e.key);
-                if (product == null) return null;
+      _cart.entries
+          .map((e) {
+        final product = _findProductById(e.key);
+        if (product == null) return null;
 
-                final quantity =
-                    product.unit == 'kg'
-                        ? e.value['quantity']
-                        : (e.value['quantity'] as num).toInt();
+        final quantity =
+        product.unit == 'kg'
+            ? e.value['quantity']
+            : (e.value['quantity'] as num).toInt();
 
-                if (quantity <= 0) return null;
-                return {'food_id': e.key, 'quantity': quantity};
-              })
-              .where((item) => item != null)
-              .toList();
+        if (quantity <= 0) return null;
+        return {'food_id': e.key, 'quantity': quantity};
+      })
+          .where((item) => item != null)
+          .toList();
 
       final orderData = {
         'table_id': widget.tableId,
@@ -543,7 +490,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        // ✅ Printerni backgroundda yuboramiz
         Future.microtask(() => _printOrderAsync(data));
         return {'success': true, 'message': 'Zakaz muvaffaqiyatli yuborildi!'};
       } else {
@@ -558,10 +504,10 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
   }
 
   void showCenterSnackBar(
-    BuildContext context,
-    String message, {
-    Color color = Colors.green,
-  }) {
+      BuildContext context,
+      String message, {
+        Color color = Colors.green,
+      }) {
     showTopSnackBar(
       Overlay.of(context),
       Material(
@@ -597,21 +543,21 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
   Future<Map<String, dynamic>> _sendAddItemsInBackground() async {
     try {
       final orderItems =
-          _cart.entries
-              .map((e) {
-                final product = _findProductById(e.key);
-                if (product == null) return null;
+      _cart.entries
+          .map((e) {
+        final product = _findProductById(e.key);
+        if (product == null) return null;
 
-                final quantity =
-                    product.unit == 'kg'
-                        ? e.value['quantity']
-                        : (e.value['quantity'] as num).toInt();
+        final quantity =
+        product.unit == 'kg'
+            ? e.value['quantity']
+            : (e.value['quantity'] as num).toInt();
 
-                if (quantity <= 0) return null;
-                return {'food_id': e.key, 'quantity': quantity};
-              })
-              .where((item) => item != null)
-              .toList();
+        if (quantity <= 0) return null;
+        return {'food_id': e.key, 'quantity': quantity};
+      })
+          .where((item) => item != null)
+          .toList();
       final api = await UserDatas().getApi();
 
       final response = await http.post(
@@ -646,16 +592,16 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         final product = _findProductById(entry.key);
         if (product != null) {
           final category = _categories.firstWhere(
-            (cat) => cat.id == product.categoryId,
+                (cat) => cat.id == product.categoryId,
             orElse:
                 () => Category(
-                  id: '',
-                  title: '',
-                  subcategories: [],
-                  printerName: '',
-                  printerIp: '',
-                  printerId: '',
-                ),
+              id: '',
+              title: '',
+              subcategories: [],
+              printerName: '',
+              printerIp: '',
+              printerId: '',
+            ),
           );
           if (category.printerIp.isNotEmpty && category.printerIp != 'null') {
             printerGroups.putIfAbsent(category.printerIp, () => []);
@@ -668,11 +614,10 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         }
       }
 
-      // Fire-and-forget → kutilmaydi
       printerGroups.forEach((ip, items) {
         final printData = {
           'orderNumber':
-              responseData['order']?['orderNumber']?.toString() ?? '',
+          responseData['order']?['orderNumber']?.toString() ?? '',
           'waiter_name': widget.user.firstName ?? 'Noma\'lum',
           'table_name': widget.tableName ?? 'N/A',
           'items': items,
@@ -688,24 +633,24 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
   }
 
   Future<void> _printAddedItemsOptimized(
-    Map<String, dynamic> responseData,
-  ) async {
+      Map<String, dynamic> responseData,
+      ) async {
     try {
       final Map<String, List<Map<String, dynamic>>> printerGroups = {};
       for (final entry in _cart.entries) {
         final product = _findProductById(entry.key);
         if (product != null) {
           final category = _categories.firstWhere(
-            (cat) => cat.id == product.categoryId,
+                (cat) => cat.id == product.categoryId,
             orElse:
                 () => Category(
-                  id: '',
-                  title: '',
-                  subcategories: [],
-                  printerName: '',
-                  printerIp: '',
-                  printerId: '',
-                ),
+              id: '',
+              title: '',
+              subcategories: [],
+              printerName: '',
+              printerIp: '',
+              printerId: '',
+            ),
           );
           if (category.printerIp.isNotEmpty && category.printerIp != 'null') {
             printerGroups.putIfAbsent(category.printerIp, () => []);
@@ -736,7 +681,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     }
   }
 
-  // Muvaffaqiyat xabarini ko‘rsatish uchun yangi metod
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -805,7 +749,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       bytes.addAll([0x1B, 0x61, 0]); // Chapga
       bytes.addAll(_encodeText(line + '\r\n'));
 
-      // ✏️ Agar izoh mavjud bo‘lsa, uni chiqaramiz
       final note = _cart[item['id']]?['note'] ?? '';
       if (note.isNotEmpty) {
         bytes.addAll([0x1B, 0x61, 0]); // Chapga
@@ -841,17 +784,17 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     final width = MediaQuery.of(context).size.width;
     final selectedCategory =
         _categories.cast<Category?>().firstWhere(
-          (cat) => cat?.id == _selectedCategoryId,
+              (cat) => cat?.id == _selectedCategoryId,
           orElse: () => null,
         ) ??
-        Category(
-          id: '',
-          title: 'Kategoriyani tanlang',
-          subcategories: [],
-          printerName: '',
-          printerIp: '',
-          printerId: '',
-        );
+            Category(
+              id: '',
+              title: 'Kategoriyani tanlang',
+              subcategories: [],
+              printerName: '',
+              printerIp: '',
+              printerId: '',
+            );
 
     return Scaffold(
       backgroundColor: Color(0xFFDFF3E3),
@@ -1048,54 +991,54 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
           ),
           Expanded(
             child:
-                _isLoading
-                    ? const Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.primary,
-                      ),
-                    )
-                    : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _categories.length,
-                      itemBuilder: (context, index) {
-                        final category = _categories[index];
-                        return Card(
-                          color: Color(0xFF144D37),
-                          margin: const EdgeInsets.only(bottom: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            side: BorderSide(
-                              color:
-                                  _selectedCategoryId == category.id
-                                      ? AppColors.primary
-                                      : AppColors.lightGrey,
-                              width: _selectedCategoryId == category.id ? 2 : 1,
-                            ),
-                          ),
-                          child: ListTile(
-                            leading: Icon(
-                              _getCategoryIcon(category.title),
-                              size: 18,
-                              color: Colors.white,
-                            ),
-                            title: Text(
-                              category.title,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            onTap:
-                                () => _selectCategory(
-                                  category.id,
-                                  category.title,
-                                ),
-                          ),
-                        );
-                      },
+            _isLoading
+                ? const Center(
+              child: CircularProgressIndicator(
+                color: AppColors.primary,
+              ),
+            )
+                : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _categories.length,
+              itemBuilder: (context, index) {
+                final category = _categories[index];
+                return Card(
+                  color: Color(0xFF144D37),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(
+                      color:
+                      _selectedCategoryId == category.id
+                          ? AppColors.primary
+                          : AppColors.lightGrey,
+                      width: _selectedCategoryId == category.id ? 2 : 1,
                     ),
+                  ),
+                  child: ListTile(
+                    leading: Icon(
+                      _getCategoryIcon(category.title),
+                      size: 18,
+                      color: Colors.white,
+                    ),
+                    title: Text(
+                      category.title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap:
+                        () => _selectCategory(
+                      category.id,
+                      category.title,
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -1103,39 +1046,14 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
   }
 
   Widget _buildProductsSection(
-    bool isDesktop,
-    bool isTablet,
-    Category selectedCategory,
-    double width,
-  ) {
+      bool isDesktop,
+      bool isTablet,
+      Category selectedCategory,
+      double width,
+      ) {
     String n(String? s) => (s ?? '').trim().toLowerCase();
 
-    // 1) Subkategoriya ro‘yxatini tayyorlab olish:
-    //    - Agar Category.subcategories bo‘lsa — o‘shani ishlatamiz
-    //    - Aks holda mahsulotlardan (ID yoki nom bo‘yicha) yig‘amiz
-    List<String> subs;
-    if (selectedCategory.subcategories.isNotEmpty) {
-      subs =
-          selectedCategory.subcategories
-              .map((e) => e.trim())
-              .where((e) => e.isNotEmpty)
-              .toSet()
-              .toList()
-            ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    } else {
-      final set = <String>{};
-      for (final p in _allProducts) {
-        final sameId = (p.categoryId?.toString() ?? '') == selectedCategory.id;
-        final sameName = n(p.categoryName) == n(selectedCategory.title);
-        if ((sameId || sameName) &&
-            (p.subcategory?.trim().isNotEmpty ?? false)) {
-          set.add(p.subcategory!.trim());
-        }
-      }
-      subs =
-          set.toList()
-            ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    }
+    List<String> subs = _visibleSubsFor(selectedCategory);
 
     return Container(
       margin: const EdgeInsets.only(right: 16),
@@ -1153,7 +1071,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Container(
             padding: const EdgeInsets.all(16),
             decoration: const BoxDecoration(
@@ -1196,7 +1113,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                     _buildSubcategoryChip(null, 'Barchasi'),
                     const SizedBox(width: 8),
                     ...subs.map(
-                      (sub) => Padding(
+                          (sub) => Padding(
                         padding: const EdgeInsets.only(right: 8),
                         child: _buildSubcategoryChip(sub, sub),
                       ),
@@ -1210,35 +1127,35 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child:
-                  _isLoading
-                      ? const Center(
-                        child: CircularProgressIndicator(
-                          color: AppColors.primary,
-                        ),
-                      )
-                      : _filteredProducts.isEmpty
-                      ? Center(
-                        child: Text(
-                          _selectedCategoryId == null && _searchQuery.isEmpty
-                              ? 'Kategoriyani tanlang'
-                              : 'Mahsulot topilmadi',
-                          style: const TextStyle(color: AppColors.grey),
-                        ),
-                      )
-                      : GridView.builder(
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: isDesktop ? 5 : (width < 650 ? 2 : 3),
-                          childAspectRatio: width < 650 ? 1.1 : 2,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                        ),
-                        itemCount: _filteredProducts.length,
-                        itemBuilder: (context, index) {
-                          print(width);
-                          final product = _filteredProducts[index];
-                          return _buildProductCard(product, isDesktop);
-                        },
-                      ),
+              _isLoading
+                  ? const Center(
+                child: CircularProgressIndicator(
+                  color: AppColors.primary,
+                ),
+              )
+                  : _filteredProducts.isEmpty
+                  ? Center(
+                child: Text(
+                  _selectedCategoryId == null && _searchQuery.isEmpty
+                      ? 'Kategoriyani tanlang'
+                      : 'Mahsulot topilmadi',
+                  style: const TextStyle(color: AppColors.grey),
+                ),
+              )
+                  : GridView.builder(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: isDesktop ? 5 : (width < 650 ? 2 : 3),
+                  childAspectRatio: width < 650 ? 1.1 : 2,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                ),
+                itemCount: _filteredProducts.length,
+                itemBuilder: (context, index) {
+                  print(width);
+                  final product = _filteredProducts[index];
+                  return _buildProductCard(product, isDesktop);
+                },
+              ),
             ),
           ),
         ],
@@ -1255,17 +1172,13 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       label: Text(label),
       selected: isActive,
       onSelected: (selected) {
-        // Avval kategoriya tanlanganmi — tekshiramiz
         if (!hasCategory) {
-          // Agar xabar ko'rsatmoqchi bo'lsangiz, quyidagisini uncomment qiling:
-          // showTopSnackBar(context, CustomSnackBar.error(message: "Avval kategoriya tanlang"));
           return;
         }
 
-        final catId = _selectedCategoryId!; // bu yerda endi xavfsiz
+        final catId = _selectedCategoryId!;
         final catName = _selectedCategoryName!;
 
-        // UI holatini yangilab qo'yamiz
         setState(() {
           _selectedSubcategory = selected ? subcategory : null;
         });
@@ -1292,13 +1205,45 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     final cartEntry = _cart[product.id];
     final int quantityInCart = cartEntry?['quantity']?.toInt() ?? 0;
     final double kgInCart =
-        product.unit == 'kg'
-            ? (cartEntry?['quantity']?.toDouble() ?? 1.0)
-            : 1.0;
+    product.unit == 'kg'
+        ? (cartEntry?['quantity']?.toDouble() ?? 1.0)
+        : 1.0;
     final double totalPrice =
-        product.unit == 'kg'
-            ? product.price * kgInCart
-            : product.price * quantityInCart;
+    product.unit == 'kg'
+        ? product.price * kgInCart
+        : product.price * quantityInCart;
+
+    // Check if the product is expired
+    bool isExpired = false;
+
+    if (product.expiration != null) {
+      try {
+        DateTime expirationDate;
+
+        // Agar product.expiration String bo‘lsa, uni DateTime ga o‘girish
+        if (product.expiration is String) {
+          final expirationStr = product.expiration as String;
+          if (expirationStr.trim().isEmpty) {
+            throw FormatException('Yaroqlilik muddati bo‘sh');
+          }
+          expirationDate = DateTime.parse(expirationStr);
+        }
+        // Agar product.expiration allaqachon DateTime bo‘lsa
+        else if (product.expiration is DateTime) {
+          expirationDate = product.expiration as DateTime;
+        }
+        // Agar boshqa tur bo‘lsa, xato chiqarish
+        else {
+          throw FormatException('Yaroqlilik muddati noto‘g‘ri turda');
+        }
+
+        // Sanani tekshirish
+        isExpired = expirationDate.isBefore(DateTime.now());
+      } catch (e) {
+        debugPrint('Xatolik: Yaroqlilik muddati noto‘g‘ri formatda: $e');
+      }
+    }
+
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1307,11 +1252,11 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
         return GestureDetector(
           onTap: () {
             if (product.unit == 'kg') {
-              if (product.soni != 0) {
+              if (product.soni != 0 && !isExpired) {
                 _showKgInputModal(context, product);
               }
             } else {
-              if (product.soni != 0) {
+              if (product.soni != 0 && !isExpired) {
                 _updateCart(product.id, 1);
               }
             }
@@ -1320,16 +1265,15 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
             constraints: BoxConstraints(maxWidth: maxCardWidth, maxHeight: 180),
             decoration: BoxDecoration(
               color:
-                  product.soni != 0
-                      ? const Color(0xFF144D37)
-                      // ignore: deprecated_member_use
-                      : const Color(0xFF144D37).withOpacity(.4),
+              product.soni != 0 && !isExpired
+                  ? const Color(0xFF144D37)
+                  : const Color(0xFF144D37).withOpacity(.4),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color:
-                    quantityInCart > 0 || kgInCart > 0
-                        ? Colors.white
-                        : Colors.grey[400]!,
+                quantityInCart > 0 || kgInCart > 0
+                    ? Colors.white
+                    : Colors.grey[400]!,
                 width: quantityInCart > 0 || kgInCart > 0 ? 2 : 1,
               ),
               boxShadow: [
@@ -1357,7 +1301,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                   child: Text(
                     product.unit == 'kg'
                         ? '${_currencyFormatter.format(product.price)} so\'m/kg'
-                        : '${_currencyFormatter.format(product.price)} ${product.unit} so\'m',
+                        : '${_currencyFormatter.format(product.price)} so\'m ${product.unit} |  Soni : ${product.soni}' ,
                     style: const TextStyle(
                       fontSize: 10,
                       color: Colors.white,
@@ -1395,14 +1339,21 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                   ),
                 ),
                 Visibility(
-                  visible: product.soni != 0,
+                  visible: isExpired,
+                  child: Text(
+                    "Mahsulot muddati o'tgan!",
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ),
+                Visibility(
+                  visible: product.soni != 0 && !isExpired,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       if (product.unit == 'kg' && kgInCart > 0) ...[
                         GestureDetector(
                           onTap: () {
-                            if (product.soni != 0) {
+                            if (product.soni != 0 && !isExpired) {
                               _updateCart(product.id, -1);
                             }
                           },
@@ -1424,11 +1375,11 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                         GestureDetector(
                           onTap: () {
                             if (product.unit == 'kg') {
-                              if (product.soni != 0) {
+                              if (product.soni != 0 && !isExpired) {
                                 _showKgInputModal(context, product);
                               }
                             } else {
-                              if (product.soni != 0) {
+                              if (product.soni != 0 && !isExpired) {
                                 _updateCart(product.id, 1);
                               }
                             }
@@ -1451,42 +1402,12 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                           quantityInCart > 0) ...[
                         GestureDetector(
                           onTap: () {
-                            if (product.soni != 0) {
-                              _updateCart(product.id, -1);
-                            }
-                          },
-                          child: Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Icon(
-                              Icons.remove,
-                              size: 18,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          '$quantityInCart',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        GestureDetector(
-                          onTap: () {
                             if (product.unit == 'kg') {
-                              if (product.soni != 0) {
+                              if (product.soni != 0 && !isExpired) {
                                 _showKgInputModal(context, product);
                               }
                             } else {
-                              if (product.soni != 0) {
+                              if (product.soni != 0 && !isExpired) {
                                 _updateCart(product.id, 1);
                               }
                             }
@@ -1505,15 +1426,46 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                             ),
                           ),
                         ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '$quantityInCart',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () {
+                            if (product.soni != 0 && !isExpired) {
+                              _updateCart(product.id, -1);
+                            }
+                          },
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(
+                              Icons.remove,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
                       ] else ...[
                         GestureDetector(
                           onTap: () {
                             if (product.unit == 'kg') {
-                              if (product.soni != 0) {
+                              if (product.soni != 0 && !isExpired) {
                                 _showKgInputModal(context, product);
                               }
                             } else {
-                              if (product.soni != 0) {
+                              if (product.soni != 0 && !isExpired) {
                                 _updateCart(product.id, 1);
                               }
                             }
@@ -1533,22 +1485,22 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                           ),
                         ),
                         SizedBox(width: 15),
-                        GestureDetector(
-                          onTap: () => _showNoteInputModal(context, product),
-                          child: Container(
-                            width: 28,
-                            height: 28,
-                            decoration: BoxDecoration(
-                              color: Colors.blueAccent,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Icon(
-                              Icons.edit,
-                              size: 16,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
+                        // GestureDetector(
+                        //   onTap: () => _showNoteInputModal(context, product),
+                        //   child: Container(
+                        //     width: 28,
+                        //     height: 28,
+                        //     decoration: BoxDecoration(
+                        //       color: Colors.blueAccent,
+                        //       borderRadius: BorderRadius.circular(16),
+                        //     ),
+                        //     child: const Icon(
+                        //       Icons.edit,
+                        //       size: 16,
+                        //       color: Colors.white,
+                        //     ),
+                        //   ),
+                        // ),
                       ],
                     ],
                   ),
@@ -1652,7 +1604,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
             constraints: BoxConstraints(maxWidth: isDesktop ? 200 : 150),
             child: OutlinedButton.icon(
               onPressed:
-                  _isSubmitting ? null : () => Navigator.of(context).pop(),
+              _isSubmitting ? null : () => Navigator.of(context).pop(),
               icon: const Icon(Icons.arrow_back, size: 18),
               label: const Text(
                 'Bekor qilish',
@@ -1676,37 +1628,37 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
             constraints: BoxConstraints(maxWidth: isDesktop ? 300 : 250),
             child: ElevatedButton.icon(
               onPressed:
-                  (isCartEmpty || _isSubmitting)
-                      ? null
-                      : (widget.isAddingToExistingOrder
-                          ? _addItemsToExistingOrder
-                          : _createOrderUltraFast),
+              (isCartEmpty || _isSubmitting)
+                  ? null
+                  : (widget.isAddingToExistingOrder
+                  ? _addItemsToExistingOrder
+                  : _createOrderUltraFast),
               icon:
-                  _isSubmitting
-                      ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
-                          ),
-                        ),
-                      )
-                      : Icon(
-                        widget.isAddingToExistingOrder
-                            ? Icons.add_shopping_cart
-                            : Icons.restaurant_menu,
-                        size: 18,
-                      ),
+              _isSubmitting
+                  ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.white,
+                  ),
+                ),
+              )
+                  : Icon(
+                widget.isAddingToExistingOrder
+                    ? Icons.add_shopping_cart
+                    : Icons.restaurant_menu,
+                size: 18,
+              ),
               label: Text(
                 _isSubmitting
                     ? (widget.isAddingToExistingOrder
-                        ? 'Qo\'shilmoqda...'
-                        : 'Yuborilmoqda...')
+                    ? 'Qo\'shilmoqda...'
+                    : 'Yuborilmoqda...')
                     : (widget.isAddingToExistingOrder
-                        ? 'Mahsulot qo\'shish (${_currencyFormatter.format(total)} so\'m)'
-                        : 'Zakaz berish (${_currencyFormatter.format(total)} so\'m)'),
+                    ? 'Mahsulot qo\'shish (${_currencyFormatter.format(total)} so\'m)'
+                    : 'Zakaz berish (${_currencyFormatter.format(total)} so\'m)'),
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
@@ -1714,9 +1666,9 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor:
-                    (isCartEmpty || _isSubmitting)
-                        ? AppColors.grey
-                        : AppColors.primary,
+                (isCartEmpty || _isSubmitting)
+                    ? AppColors.grey
+                    : AppColors.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -1750,12 +1702,12 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
-              contentPadding: const EdgeInsets.all(6), // Yanada kichik padding
+              contentPadding: const EdgeInsets.all(6),
               titlePadding: const EdgeInsets.only(top: 6, left: 6, right: 6),
               title: Column(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(6), // Kichikroq
+                    padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
                       color: AppColors.primary,
                       borderRadius: BorderRadius.circular(6),
@@ -1767,13 +1719,13 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                           Icons.scale,
                           color: Colors.white,
                           size: 14,
-                        ), // Kichik ikonka
+                        ),
                         const SizedBox(width: 4),
                         const Text(
                           'AFITSANT',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 12, // Kichik font
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -1786,21 +1738,21 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                     style: const TextStyle(
                       fontSize: 11,
                       color: Colors.white,
-                    ), // Kichik font
+                    ),
                     textAlign: TextAlign.center,
                     overflow: TextOverflow.ellipsis,
                   ),
                   Text(
                     'Narxi: ${_currencyFormatter.format(product.price)} so\'m/kg',
                     style: const TextStyle(
-                      fontSize: 14, // Kichik font
+                      fontSize: 14,
                       color: AppColors.white,
                     ),
                   ),
                 ],
               ),
               content: Container(
-                width: 220, // Yanada kichik kenglik
+                width: 220,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1808,7 +1760,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
                         vertical: 6,
-                      ), // Kichik
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.grey[100],
                         borderRadius: BorderRadius.circular(6),
@@ -1819,7 +1771,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                             ? '0 kg'
                             : '${kgController.text} kg',
                         style: const TextStyle(
-                          fontSize: 14, // Kichik font
+                          fontSize: 14,
                           fontWeight: FontWeight.bold,
                         ),
                         textAlign: TextAlign.center,
@@ -1829,7 +1781,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                     GridView.count(
                       shrinkWrap: true,
                       crossAxisCount: 3,
-                      childAspectRatio: 1.4, // Kichikroq tugmalar
+                      childAspectRatio: 1.4,
                       crossAxisSpacing: 3,
                       mainAxisSpacing: 3,
                       children: [
@@ -1856,7 +1808,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                           });
                         }),
                         _buildNumberButton('←', () {
-                          // Backspace
                           setState(() {
                             if (kgController.text.isNotEmpty) {
                               kgController.text = kgController.text.substring(
@@ -1869,7 +1820,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                           });
                         }, isSpecial: true),
                         _buildNumberButton('C', () {
-                          // Clear
                           setState(() {
                             kgController.text = '';
                             kg = 0.0;
@@ -1880,14 +1830,13 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                     ),
 
                     const SizedBox(height: 6),
-                    // Tan narxi va yangi narxi
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
                           'Yangi narxi: ${_currencyFormatter.format(price)} so\'m',
                           style: const TextStyle(
-                            fontSize: 11, // Kichik font
+                            fontSize: 11,
                             fontWeight: FontWeight.bold,
                             color: Colors.red,
                           ),
@@ -1909,7 +1858,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                           style: TextButton.styleFrom(
                             padding: const EdgeInsets.symmetric(
                               vertical: 6,
-                            ), // Kichik
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(6),
                             ),
@@ -1920,7 +1869,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                             style: TextStyle(
                               fontSize: 10,
                               color: Colors.grey,
-                            ), // Kichik font
+                            ),
                           ),
                         ),
                       ),
@@ -1928,17 +1877,17 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                       Expanded(
                         child: ElevatedButton(
                           onPressed:
-                              kg > 0
-                                  ? () {
-                                    _updateCart(product.id, 1, kg: kg);
-                                    Navigator.of(context).pop();
-                                  }
-                                  : null,
+                          kg > 0
+                              ? () {
+                            _updateCart(product.id, 1, kg: kg);
+                            Navigator.of(context).pop();
+                          }
+                              : null,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             padding: const EdgeInsets.symmetric(
                               vertical: 6,
-                            ), // Kichik
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(6),
                               side: BorderSide(color: Colors.grey[400]!),
@@ -1947,7 +1896,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
                           child: const Text(
                             'Saqlash',
                             style: TextStyle(
-                              fontSize: 10, // Kichik font
+                              fontSize: 10,
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
                             ),
@@ -1965,13 +1914,12 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
     );
   }
 
-  // Tugma funksiyasi (eski _buildNumberButton ni almashtiring)
   Widget _buildNumberButton(
-    String text,
-    VoidCallback onTap, {
-    bool isSelected = false,
-    bool isSpecial = false,
-  }) {
+      String text,
+      VoidCallback onTap, {
+        bool isSelected = false,
+        bool isSpecial = false,
+      }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -1994,7 +1942,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
           child: Text(
             text,
             style: TextStyle(
-              fontSize: isSpecial ? 12 : 14, // Kichikroq font
+              fontSize: isSpecial ? 12 : 14,
               fontWeight: FontWeight.bold,
               color: isSelected ? Colors.white : Colors.black87,
             ),
@@ -2050,7 +1998,7 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
 
     final tableLine =
         '${data['table_name']}'.padRight(15) +
-        DateTime.now().toString().substring(11, 16);
+            DateTime.now().toString().substring(11, 16);
     bytes.addAll(_encodeText(tableLine + '\r\n'));
 
     bytes.addAll(_encodeText('=' * printerWidth + '\r\n'));
@@ -2063,7 +2011,6 @@ class _OrderScreenContentState extends State<OrderScreenContent> {
       bytes.addAll([0x1B, 0x61, 0]); // Left
       bytes.addAll(_encodeText(line + '\r\n'));
 
-      // ✏️ Qo‘shimcha izohni chiqarish
       final note = _cart[item['id']]?['note'] ?? '';
       if (note.isNotEmpty) {
         bytes.addAll(_encodeText('  -> $note\r\n'));

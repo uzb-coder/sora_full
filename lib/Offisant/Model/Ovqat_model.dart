@@ -23,6 +23,7 @@ class Ovqat {
   final String? image;
   final String? unit;
   final dynamic soni;
+  DateTime? expiration;
   final List<Subcategory> subcategories;
 
   Ovqat({
@@ -37,12 +38,16 @@ class Ovqat {
     this.image,
     this.unit,
     required this.subcategories,
+    required this.expiration,
   });
 
   factory Ovqat.fromJson(Map<String, dynamic> json) {
     final category = json['category_id'] ?? json['category'];
 
     return Ovqat(
+      expiration: json["expiration"] != null
+          ? DateTime.parse(json["expiration"])
+          : null,
       id: json['_id'] ?? '',
       name: json['name'] ?? '',
       price: (json['price'] ?? 0).toDouble(),
